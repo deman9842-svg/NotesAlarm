@@ -11,7 +11,8 @@ on:
       - "v99_patch_parts/**"
       - "v100_patch_parts/**"
       - "v101_patch_parts/**"
-      - "v102_patch_parts/**"\n      - "v103_restore/**"
+      - "v102_patch_parts/**"
+      - "v103_restore/**"
 
 jobs:
   build:
