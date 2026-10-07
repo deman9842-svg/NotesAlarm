@@ -11,7 +11,7 @@ on:
       - "v99_patch_parts/**"
       - "v100_patch_parts/**"
       - "v101_patch_parts/**"
-      - "v102_patch_parts/**"
+      - "v102_patch_parts/**"\n      - "v103_restore/**"
 
 jobs:
   build:
@@ -142,24 +142,54 @@ jobs:
           grep -q 'popBackStack' app/src/main/java/com/example/noteshiftapp/navigation/ReliableAppNavHost.kt
           grep -q 'destination == AppDestination.Notes' app/src/main/java/com/example/noteshiftapp/navigation/ReliableAppNavHost.kt
 
+      - name: Restore known-good v96 navigation
+        run: |
+          cd NoteShiftApp_v96_OPTIMIZED
+          cp ../v103_restore/AppNavHost.kt app/src/main/java/com/example/noteshiftapp/navigation/AppNavHost.kt
+          cp ../v103_restore/AppLauncherMenu.kt app/src/main/java/com/example/noteshiftapp/ui/components/AppLauncherMenu.kt
+          python3 - <<'PY'
+          from pathlib import Path
+
+          main = Path("app/src/main/java/com/example/noteshiftapp/MainActivity.kt")
+          text = main.read_text()
+          text = text.replace(
+              "import com.example.noteshiftapp.navigation.ReliableAppNavHost",
+              "import com.example.noteshiftapp.navigation.AppNavHost",
+          )
+          text = text.replace("ReliableAppNavHost(", "AppNavHost(")
+          main.write_text(text)
+
+          gradle = Path("app/build.gradle.kts")
+          text = gradle.read_text()
+          text = text.replace("versionCode = 102", "versionCode = 103", 1)
+          text = text.replace('versionName = "1.10.15"', 'versionName = "1.10.16"', 1)
+          gradle.write_text(text)
+          PY
+          grep -q 'navController.navigate(destination.route)' app/src/main/java/com/example/noteshiftapp/navigation/AppNavHost.kt
+          grep -q 'width(430.dp)' app/src/main/java/com/example/noteshiftapp/ui/components/AppLauncherMenu.kt
+          grep -q 'import com.example.noteshiftapp.navigation.AppNavHost' app/src/main/java/com/example/noteshiftapp/MainActivity.kt
+          ! grep -q 'ReliableAppNavHost(' app/src/main/java/com/example/noteshiftapp/MainActivity.kt
+          grep -q 'versionCode = 103' app/build.gradle.kts
+          grep -q 'versionName = "1.10.16"' app/build.gradle.kts
+
       - name: Build signed RELEASE APK
         run: |
           cd NoteShiftApp_v96_OPTIMIZED
           rm -f local.properties
           gradle :app:assembleRelease --no-daemon --stacktrace
-          cp app/build/outputs/apk/release/app-release.apk ../NoteShiftApp_v1.10.15_DIRECT_NOTES.apk
+          cp app/build/outputs/apk/release/app-release.apk ../NoteShiftApp_v1.10.16_V96_NAV_RESTORE.apk
 
       - name: Verify APK and signature
         run: |
-          test -f NoteShiftApp_v1.10.15_DIRECT_NOTES.apk
-          ls -lh NoteShiftApp_v1.10.15_DIRECT_NOTES.apk
-          sha256sum NoteShiftApp_v1.10.15_DIRECT_NOTES.apk
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs NoteShiftApp_v1.10.15_DIRECT_NOTES.apk
+          test -f NoteShiftApp_v1.10.16_V96_NAV_RESTORE.apk
+          ls -lh NoteShiftApp_v1.10.16_V96_NAV_RESTORE.apk
+          sha256sum NoteShiftApp_v1.10.16_V96_NAV_RESTORE.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs NoteShiftApp_v1.10.16_V96_NAV_RESTORE.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: NoteShiftApp-v102-APK
-          path: NoteShiftApp_v1.10.15_DIRECT_NOTES.apk
+          name: NoteShiftApp-v103-APK
+          path: NoteShiftApp_v1.10.16_V96_NAV_RESTORE.apk
           if-no-files-found: error
           retention-days: 30
