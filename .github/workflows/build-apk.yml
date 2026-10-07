@@ -106,17 +106,9 @@ jobs:
 
           nav = Path("app/src/main/java/com/example/noteshiftapp/navigation/ReliableAppNavHost.kt")
           text = nav.read_text()
-          old = '''    val navigateToDestination: (AppDestination) -> Unit = { destination ->
-              if (destination in AppDestination.bottomItems && destination.route != currentRoute) {
-                  navController.navigate(destination.route) {
-                      popUpTo(navController.graph.startDestinationId) { saveState = true }
-                      launchSingleTop = true
-                      restoreState = true
-                  }
-              }
-          }
-          '''
-          new = '''    val navigateToDestination: (AppDestination) -> Unit = { destination ->
+          block_start = text.index("    val navigateToDestination:")
+          block_end = text.index("\n\n    NavHost(", block_start)
+          replacement = '''    val navigateToDestination: (AppDestination) -> Unit = { destination ->
               if (destination in AppDestination.bottomItems) {
                   if (destination == AppDestination.Notes) {
                       if (currentRoute != AppDestination.Notes.route) {
@@ -141,10 +133,9 @@ jobs:
                       }
                   }
               }
-          }
-          '''
-          assert old in text
-          nav.write_text(text.replace(old, new, 1))
+          }'''
+          text = text[:block_start] + replacement + text[block_end:]
+          nav.write_text(text)
           PY
           grep -q 'versionCode = 102' app/build.gradle.kts
           grep -q 'versionName = "1.10.15"' app/build.gradle.kts
