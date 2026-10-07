@@ -10,7 +10,7 @@ on:
       - "v98_patch_parts/**"
       - "v99_patch_parts/**"
       - "v100_patch_parts/**"
-      - "v101_patch_parts/**"
+      - "v101_patch_parts/**"\n      - "v102_patch_parts/**"
 
 jobs:
   build:
@@ -89,24 +89,35 @@ jobs:
           grep -q 'startDestination = AppDestination.Notes.route' app/src/main/java/com/example/noteshiftapp/navigation/ReliableAppNavHost.kt
           grep -q 'DropdownMenuItem' app/src/main/java/com/example/noteshiftapp/ui/components/AppLauncherMenu.kt
 
+      - name: Apply v102 direct-notes-return fix
+        run: |
+          cat v102_patch_parts/part_* > /tmp/v102_direct_notes.patch
+          cd NoteShiftApp_v96_OPTIMIZED
+          git apply --check /tmp/v102_direct_notes.patch
+          git apply /tmp/v102_direct_notes.patch
+          grep -q 'versionCode = 102' app/build.gradle.kts
+          grep -q 'versionName = "1.10.15"' app/build.gradle.kts
+          grep -q 'popBackStack' app/src/main/java/com/example/noteshiftapp/navigation/ReliableAppNavHost.kt
+          grep -q 'destination == AppDestination.Notes' app/src/main/java/com/example/noteshiftapp/navigation/ReliableAppNavHost.kt
+
       - name: Build signed RELEASE APK
         run: |
           cd NoteShiftApp_v96_OPTIMIZED
           rm -f local.properties
           gradle :app:assembleRelease --no-daemon --stacktrace
-          cp app/build/outputs/apk/release/app-release.apk ../NoteShiftApp_v1.10.14_RELIABLE_NAV.apk
+          cp app/build/outputs/apk/release/app-release.apk ../NoteShiftApp_v1.10.15_DIRECT_NOTES.apk
 
       - name: Verify APK and signature
         run: |
-          test -f NoteShiftApp_v1.10.14_RELIABLE_NAV.apk
-          ls -lh NoteShiftApp_v1.10.14_RELIABLE_NAV.apk
-          sha256sum NoteShiftApp_v1.10.14_RELIABLE_NAV.apk
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs NoteShiftApp_v1.10.14_RELIABLE_NAV.apk
+          test -f NoteShiftApp_v1.10.15_DIRECT_NOTES.apk
+          ls -lh NoteShiftApp_v1.10.15_DIRECT_NOTES.apk
+          sha256sum NoteShiftApp_v1.10.15_DIRECT_NOTES.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs NoteShiftApp_v1.10.15_DIRECT_NOTES.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: NoteShiftApp-v101-APK
-          path: NoteShiftApp_v1.10.14_RELIABLE_NAV.apk
+          name: NoteShiftApp-v102-APK
+          path: NoteShiftApp_v1.10.15_DIRECT_NOTES.apk
           if-no-files-found: error
           retention-days: 30

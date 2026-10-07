@@ -1,0 +1,52 @@
+--- a/app/build.gradle.kts
++++ b/app/build.gradle.kts
+@@ -13,8 +13,8 @@
+         applicationId = "com.example.noteshiftapp"
+         minSdk = 26
+         targetSdk = 35
+-        versionCode = 101
+-        versionName = "1.10.14"
++        versionCode = 102
++        versionName = "1.10.15"
+ 
+         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+         vectorDrawables {
+--- a/app/src/main/java/com/example/noteshiftapp/navigation/ReliableAppNavHost.kt
++++ b/app/src/main/java/com/example/noteshiftapp/navigation/ReliableAppNavHost.kt
+@@ -43,13 +43,29 @@ fun ReliableAppNavHost(
+     }
+ 
+     val navigateToDestination: (AppDestination) -> Unit = { destination ->
+-        if (destination in AppDestination.bottomItems && destination.route != currentRoute) {
+-            navController.navigate(destination.route) {
+-                popUpTo(navController.graph.startDestinationId) { saveState = true }
+-                launchSingleTop = true
+-                restoreState = true
++        if (destination in AppDestination.bottomItems) {
++            if (destination == AppDestination.Notes) {
++                if (currentRoute != AppDestination.Notes.route) {
++                    // Notes is the graph start destination. Returning to it must pop
++                    // the current main tab off the stack instead of trying to
++                    // navigate to the start destination with restoreState.
++                    val returnedToNotes = navController.popBackStack(
++                        route = AppDestination.Notes.route,
++                        inclusive = false,
++                    )
++                    if (!returnedToNotes) {
++                        navController.navigate(AppDestination.Notes.route) {
++                            popUpTo(navController.graph.startDestinationId) {
++                                inclusive = true
++                            }
++                            launchSingleTop = true
++                        }
++                    }
++                }
++            } else if (destination.route != currentRoute) {
++                navController.navigate(destination.route) {
++                    popUpTo(navController.graph.startDestinationId) { saveState = true }
++                    launchSingleTop = true
++                    restoreState = true
++                }
+             }
+         }
+     }
