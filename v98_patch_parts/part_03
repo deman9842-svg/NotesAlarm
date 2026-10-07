@@ -1,0 +1,148 @@
++                    viewportSizePx[1] = it.height
++                    val scale = gestureZoomState.floatValue
++                    val nextX = clampedOffsetX(offsetXState.floatValue, scale)
++                    val nextY = clampedOffsetY(offsetYState.floatValue, scale)
++                    offsetXState.floatValue = nextX
++                    offsetYState.floatValue = nextY
++                    refreshVisibleWindow(nextX, nextY, scale)
+                 }
+-                .pointerInput(Unit) {
++                .pointerInput(rowCount, columnCount, rowGeometryVersion, columnGeometryVersion) {
+                     detectTransformGestures(
+                         panZoomLock = false,
+                         onGesture = { _, pan, zoomFactor, _ ->
+                             val hasMovement = kotlin.math.abs(pan.x) > 0.35f || kotlin.math.abs(pan.y) > 0.35f
+                             val hasZoom = kotlin.math.abs(zoomFactor - 1f) > 0.002f
+                             if (hasMovement || hasZoom) {
+-                                suppressClicksUntilMs = SystemClock.uptimeMillis() + 650L
+-                                val nextZoom = (gestureZoom * zoomFactor).coerceIn(MIN_ZOOM, MAX_ZOOM)
+-                                gestureZoom = nextZoom
+-                                offsetX = clampedOffsetX(offsetX + pan.x, nextZoom)
+-                                offsetY = clampedOffsetY(offsetY + pan.y, nextZoom)
++                                suppressClicksUntilMs[0] = SystemClock.uptimeMillis() + 650L
++                                val currentZoom = gestureZoomState.floatValue
++                                val nextZoom = (currentZoom * zoomFactor).coerceIn(MIN_ZOOM, MAX_ZOOM)
++                                val nextX = clampedOffsetX(offsetXState.floatValue + pan.x, nextZoom)
++                                val nextY = clampedOffsetY(offsetYState.floatValue + pan.y, nextZoom)
++
++                                // These three writes invalidate only the graphics layer.
++                                gestureZoomState.floatValue = nextZoom
++                                offsetXState.floatValue = nextX
++                                offsetYState.floatValue = nextY
++
++                                // Composition is refreshed only when the set of visible
++                                // rows/columns actually changes, not for every pixel.
++                                refreshVisibleWindow(nextX, nextY, nextZoom)
+                             }
+                         },
+                     )
+@@ -663,65 +726,68 @@ private fun SpreadsheetGrid(
+         ) {
+             Box(
+                 modifier = Modifier
+-                    .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
+                     .graphicsLayer {
+-                        scaleX = gestureZoom
+-                        scaleY = gestureZoom
++                        translationX = offsetXState.floatValue
++                        translationY = offsetYState.floatValue
++                        scaleX = gestureZoomState.floatValue
++                        scaleY = gestureZoomState.floatValue
+                         transformOrigin = TransformOrigin(0f, 0f)
+                     }
+                     .width(contentWidthDp.dp)
+                     .height(contentHeightDp.dp)
+-                    .align(Alignment.TopStart)
++                    .align(Alignment.TopStart),
+             ) {
+                 HeaderCornerCell()
+-                for (columnIndex in startColumn..endColumn) {
+-                    HeaderCell(
+-                        label = columnName(columnIndex),
+-                        widthDp = columnWidthsDp[columnIndex],
+-                        headerHeightDp = headerHeightDp,
+-                        selected = selectedColumnIndex == columnIndex,
+-                        onClick = { if (SystemClock.uptimeMillis() >= suppressClicksUntilMs) onColumnHeaderClick(columnIndex) },
+-                        onResizeDelta = { if (SystemClock.uptimeMillis() >= suppressClicksUntilMs) onColumnResize(columnIndex, it) },
+-                        modifier = Modifier.offset {
+-                            IntOffset(
+-                                columnOffsetsPx[columnIndex].roundToInt(),
+-                                0,
+-                            )
+-                        },
+-                    )
+-                }
+-                for (rowIndex in startRow..endRow) {
+-                    RowHeaderCell(
+-                        rowNumber = rowIndex + 1,
+-                        widthDp = rowHeaderWidthDp,
+-                        heightDp = rowHeightsDp[rowIndex],
+-                        selected = selectedRowIndex == rowIndex,
+-                        onClick = { if (SystemClock.uptimeMillis() >= suppressClicksUntilMs) onRowHeaderClick(rowIndex) },
+-                        onResizeDelta = { if (SystemClock.uptimeMillis() >= suppressClicksUntilMs) onRowResize(rowIndex, it) },
+-                        modifier = Modifier.offset {
+-                            IntOffset(
+-                                0,
+-                                rowOffsetsPx[rowIndex].roundToInt(),
+-                            )
+-                        },
+-                    )
+-                    for (columnIndex in startColumn..endColumn) {
+-                        DataCell(
+-                            value = cellValue(rowIndex, columnIndex),
++                if (visibleWindow.endColumn >= visibleWindow.startColumn && visibleWindow.endRow >= visibleWindow.startRow) {
++                    for (columnIndex in visibleWindow.startColumn..visibleWindow.endColumn) {
++                        HeaderCell(
++                            label = columnName(columnIndex),
+                             widthDp = columnWidthsDp[columnIndex],
+-                            heightDp = rowHeightsDp[rowIndex],
+-                            selectedRow = selectedRowIndex == rowIndex,
+-                            selectedColumn = selectedColumnIndex == columnIndex,
+-                            selectedCell = selectedCell?.let { it.first == rowIndex && it.second == columnIndex } == true,
+-                            onClick = { if (SystemClock.uptimeMillis() >= suppressClicksUntilMs) onCellClick(rowIndex, columnIndex) },
+-                            onLongClick = { if (SystemClock.uptimeMillis() >= suppressClicksUntilMs) onCellLongClick(rowIndex, columnIndex) },
++                            headerHeightDp = headerHeightDp,
++                            selected = selectedColumnIndex == columnIndex,
++                            onClick = { if (SystemClock.uptimeMillis() >= suppressClicksUntilMs[0]) onColumnHeaderClick(columnIndex) },
++                            onResizeDelta = { if (SystemClock.uptimeMillis() >= suppressClicksUntilMs[0]) onColumnResize(columnIndex, it) },
+                             modifier = Modifier.offset {
+                                 IntOffset(
+                                     columnOffsetsPx[columnIndex].roundToInt(),
++                                    0,
++                                )
++                            },
++                        )
++                    }
++                    for (rowIndex in visibleWindow.startRow..visibleWindow.endRow) {
++                        RowHeaderCell(
++                            rowNumber = rowIndex + 1,
++                            widthDp = rowHeaderWidthDp,
++                            heightDp = rowHeightsDp[rowIndex],
++                            selected = selectedRowIndex == rowIndex,
++                            onClick = { if (SystemClock.uptimeMillis() >= suppressClicksUntilMs[0]) onRowHeaderClick(rowIndex) },
++                            onResizeDelta = { if (SystemClock.uptimeMillis() >= suppressClicksUntilMs[0]) onRowResize(rowIndex, it) },
++                            modifier = Modifier.offset {
++                                IntOffset(
++                                    0,
+                                     rowOffsetsPx[rowIndex].roundToInt(),
+                                 )
+                             },
+                         )
++                        for (columnIndex in visibleWindow.startColumn..visibleWindow.endColumn) {
++                            DataCell(
++                                value = cellValue(rowIndex, columnIndex),
++                                widthDp = columnWidthsDp[columnIndex],
++                                heightDp = rowHeightsDp[rowIndex],
++                                selectedRow = selectedRowIndex == rowIndex,
++                                selectedColumn = selectedColumnIndex == columnIndex,
++                                selectedCell = selectedCell?.let { it.first == rowIndex && it.second == columnIndex } == true,
++                                onClick = { if (SystemClock.uptimeMillis() >= suppressClicksUntilMs[0]) onCellClick(rowIndex, columnIndex) },
++                                onLongClick = { if (SystemClock.uptimeMillis() >= suppressClicksUntilMs[0]) onCellLongClick(rowIndex, columnIndex) },
++                                modifier = Modifier.offset {
++                                    IntOffset(
++                                        columnOffsetsPx[columnIndex].roundToInt(),
++                                        rowOffsetsPx[rowIndex].roundToInt(),
++                                    )
++                                },
++                            )
++                        }

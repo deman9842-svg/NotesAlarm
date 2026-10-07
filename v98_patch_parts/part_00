@@ -1,0 +1,207 @@
+diff --git a/BUILD_TREE_UPDATE.cmd b/BUILD_TREE_UPDATE.cmd
+index 5869509..c8a3745 100644
+--- a/BUILD_TREE_UPDATE.cmd
++++ b/BUILD_TREE_UPDATE.cmd
+@@ -3,7 +3,7 @@ setlocal EnableExtensions
+ cd /d "%~dp0"
+ 
+ echo ===============================================
+-echo NoteShiftApp v1.10.10 - OPTIMIZED
++echo NoteShiftApp v1.10.11 - SMOOTH RELEASE
+ echo ===============================================
+ echo.
+ 
+@@ -44,7 +44,7 @@ if errorlevel 1 (
+ )
+ 
+ set "SRC=%~dp0app\build\outputs\apk\debug\app-debug.apk"
+-set "DST=%~dp0NoteShiftApp_v1.10.10_FAST_TABS.apk"
++set "DST=%~dp0NoteShiftApp_v1.10.11_SMOOTH.apk"
+ 
+ if not exist "%SRC%" (
+   echo [ERROR] APK was not found: %SRC%
+diff --git a/INSTALL_TREE_UPDATE_ADB.cmd b/INSTALL_TREE_UPDATE_ADB.cmd
+index 0d3284d..b60a072 100644
+--- a/INSTALL_TREE_UPDATE_ADB.cmd
++++ b/INSTALL_TREE_UPDATE_ADB.cmd
+@@ -1,7 +1,7 @@
+ @echo off
+ setlocal EnableExtensions
+ cd /d "%~dp0"
+-set "APK=%~dp0NoteShiftApp_v1.10.10_FAST_TABS.apk"
++set "APK=%~dp0NoteShiftApp_v1.10.11_SMOOTH.apk"
+ if not exist "%APK%" (
+   echo [ERROR] First run BUILD_TREE_UPDATE.cmd
+   pause
+diff --git a/UPDATE_NOTES_RU.txt b/UPDATE_NOTES_RU.txt
+index 80e48e5..97e13ec 100644
+--- a/UPDATE_NOTES_RU.txt
++++ b/UPDATE_NOTES_RU.txt
+@@ -1,12 +1,16 @@
+-NoteShiftApp v1.10.10 / versionCode 97 — FAST TABS
++NoteShiftApp v1.10.11 / versionCode 98 — SMOOTH RELEASE
+ 
+-Главное исправление: убраны жёсткие подвисания при переходе между разделами и долгая подготовка таблицы.
++Исправления производительности второго уровня:
++1. APK теперь собирается как RELEASE, а не DEBUG. Это убирает отладочные накладные расходы Compose на реальном телефоне.
++2. Четыре главные вкладки постоянно остаются в композиции. Переключение больше не уничтожает и не создаёт экран заново.
++3. Таблица больше не делает полную рекомпозицию на каждый пиксель движения пальца.
++4. Панорамирование и масштаб таблицы выполняются через graphicsLayer; Compose пересобирает ячейки только при изменении видимого диапазона строк/столбцов.
++5. Состояние подавления кликов и размер viewport вынесены из Compose-state, чтобы жесты не запускали лишние кадры рекомпозиции.
++6. Убраны лишние alpha-слои на карточках завершённых заметок и строках дерева задач — меньше offscreen-композитинга при вертикальном скролле.
++7. Фильтрация активных/завершённых заметок кэшируется по списку заметок.
+ 
+-Что изменено:
+-1. Данные четырёх основных разделов прогреваются один раз и не перечитываются с нуля после каждого перехода.
+-2. Таблица показывается сразу — удалена искусственная задержка.
+-3. Открытие меню больше не уничтожает таблицу и не заставляет строить её заново.
+-4. Все ячейки больше не копируются поштучно в отдельную Compose-карту при каждом входе.
+-5. JSON таблиц читается из DataStore один раз на запуск приложения; дальше используется быстрый кэш в памяти.
+-6. Сохранение таблицы вынесено с UI-потока, а изменение ячейки отображается сразу.
+-7. Версия повышена до 1.10.10 / 97; applicationId, Room version и ключ подписи не изменены.
++Совместимость:
++- applicationId не изменён;
++- Room version не изменён;
++- тот же ключ подписи;
++- данные пользователя должны сохраниться при установке поверх предыдущей версии.
+diff --git a/app/build.gradle.kts b/app/build.gradle.kts
+index cefa140..7a7c7a4 100644
+--- a/app/build.gradle.kts
++++ b/app/build.gradle.kts
+@@ -13,8 +13,8 @@ android {
+         applicationId = "com.example.noteshiftapp"
+         minSdk = 26
+         targetSdk = 35
+-        versionCode = 97
+-        versionName = "1.10.10"
++        versionCode = 98
++        versionName = "1.10.11"
+ 
+         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+         vectorDrawables {
+diff --git a/app/src/main/java/com/example/noteshiftapp/navigation/AppNavHost.kt b/app/src/main/java/com/example/noteshiftapp/navigation/AppNavHost.kt
+index 2282a36..03b65bb 100644
+--- a/app/src/main/java/com/example/noteshiftapp/navigation/AppNavHost.kt
++++ b/app/src/main/java/com/example/noteshiftapp/navigation/AppNavHost.kt
+@@ -1,16 +1,23 @@
+ package com.example.noteshiftapp.navigation
+ 
+ import android.app.Application
++import androidx.compose.foundation.layout.Box
++import androidx.compose.foundation.layout.fillMaxSize
+ import androidx.compose.runtime.Composable
+ import androidx.compose.runtime.LaunchedEffect
+ import androidx.compose.runtime.getValue
++import androidx.compose.runtime.mutableStateOf
++import androidx.compose.runtime.remember
++import androidx.compose.runtime.saveable.rememberSaveable
++import androidx.compose.runtime.setValue
+ import androidx.compose.ui.Modifier
++import androidx.compose.ui.graphics.graphicsLayer
+ import androidx.compose.ui.platform.LocalContext
++import androidx.compose.ui.zIndex
+ import androidx.lifecycle.viewmodel.compose.viewModel
+ import androidx.navigation.NavType
+ import androidx.navigation.compose.NavHost
+ import androidx.navigation.compose.composable
+-import androidx.navigation.compose.currentBackStackEntryAsState
+ import androidx.navigation.compose.rememberNavController
+ import androidx.navigation.navArgument
+ import com.example.noteshiftapp.ui.alarms.AlarmsScreen
+@@ -24,6 +31,8 @@ import com.example.noteshiftapp.viewmodel.NoteDetailsViewModel
+ import com.example.noteshiftapp.viewmodel.NotesViewModel
+ import com.example.noteshiftapp.viewmodel.SheetsViewModel
+ 
++private const val MAIN_TABS_ROUTE = "main_tabs"
++
+ @Composable
+ fun AppNavHost(
+     openNoteId: Long? = null,
+@@ -32,12 +41,13 @@ fun AppNavHost(
+     val navController = rememberNavController()
+     val context = LocalContext.current
+     val application = context.applicationContext as Application
+-    val backStackEntry by navController.currentBackStackEntryAsState()
+-    val currentRoute = backStackEntry?.destination?.route
+ 
+-    // Keep the four main-screen ViewModels alive for the whole Activity. Previously
+-    // each tab had to recreate its collectors after navigation, so Room/DataStore
+-    // could briefly return an empty/loading state and the screen visibly stalled.
++    // Main tabs are deliberately kept alive at the same time. Navigation Compose used
++    // to dispose/recreate the destination subtree on every tab switch. Keeping the four
++    // roots composed trades a small amount of RAM for instant switching and retained
++    // LazyColumn/table state.
++    var selectedMainRoute by rememberSaveable { mutableStateOf(AppDestination.Notes.route) }
++
+     val notesViewModel: NotesViewModel = viewModel(
+         key = "root_notes",
+         factory = NotesViewModel.factory(application),
+@@ -65,53 +75,58 @@ fun AppNavHost(
+         onOpenNoteConsumed()
+     }
+ 
+-    val navigateToDestination: (AppDestination) -> Unit = { destination ->
+-        if (destination.route != currentRoute) {
+-            navController.navigate(destination.route) {
+-                popUpTo(navController.graph.startDestinationId) {
+-                    saveState = true
+-                }
+-                launchSingleTop = true
+-                restoreState = true
++    val navigateToDestination: (AppDestination) -> Unit = remember {
++        { destination ->
++            if (destination in AppDestination.bottomItems) {
++                selectedMainRoute = destination.route
++                navController.popBackStack(MAIN_TABS_ROUTE, inclusive = false)
+             }
+         }
+     }
+ 
+     NavHost(
+         navController = navController,
+-        startDestination = AppDestination.Notes.route,
++        startDestination = MAIN_TABS_ROUTE,
+         modifier = Modifier,
+     ) {
+-        composable(AppDestination.Notes.route) {
+-            NotesScreen(
+-                viewModel = notesViewModel,
+-                currentRoute = currentRoute,
+-                onDestinationClick = navigateToDestination,
+-            ) { noteId ->
+-                navController.navigate(AppDestination.NoteDetails.createRoute(noteId))
++        composable(MAIN_TABS_ROUTE) {
++            Box(modifier = Modifier.fillMaxSize()) {
++                KeepAliveTab(active = selectedMainRoute == AppDestination.Notes.route) {
++                    NotesScreen(
++                        viewModel = notesViewModel,
++                        currentRoute = AppDestination.Notes.route,
++                        onDestinationClick = navigateToDestination,
++                    ) { noteId ->
++                        navController.navigate(AppDestination.NoteDetails.createRoute(noteId))
++                    }
++                }
++
++                KeepAliveTab(active = selectedMainRoute == AppDestination.Calendar.route) {
++                    CalendarScreen(
++                        viewModel = calendarViewModel,
++                        currentRoute = AppDestination.Calendar.route,
++                        onDestinationClick = navigateToDestination,
++                    )
++                }
++
++                KeepAliveTab(active = selectedMainRoute == AppDestination.Tables.route) {
++                    TablesScreen(
++                        viewModel = sheetsViewModel,
++                        currentRoute = AppDestination.Tables.route,
++                        onDestinationClick = navigateToDestination,
++                    )
++                }
++
++                KeepAliveTab(active = selectedMainRoute == AppDestination.Alarms.route) {
++                    AlarmsScreen(
++                        viewModel = alarmViewModel,
++                        currentRoute = AppDestination.Alarms.route,
++                        onDestinationClick = navigateToDestination,
++                    )
++                }

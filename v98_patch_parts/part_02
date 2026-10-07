@@ -1,0 +1,240 @@
+     val rowHeaderWidthPx = remember(density.density) { with(density) { rowHeaderWidthDp.dp.toPx() } }
+     val headerHeightPx = remember(density.density) { with(density) { headerHeightDp.dp.toPx() } }
+-    val bufferPx = remember(density.density) { with(density) { 96.dp.toPx() } }
++    val bufferPx = remember(density.density) { with(density) { 140.dp.toPx() } }
+     val rowHeightsPx = remember(rowHeightsDp, density.density) {
+         FloatArray(rowCount) { index -> with(density) { rowHeightsDp[index].dp.toPx() } }
+     }
+@@ -528,106 +534,148 @@ private fun SpreadsheetGrid(
+         }
+     }
+ 
+-    fun clampedOffsetX(value: Float, scale: Float = gestureZoom): Float {
++    fun clampedOffsetX(value: Float, scale: Float): Float {
+         val scaledWidth = baseContentWidthPx * scale
+-        val minX = minOf(0f, viewportWidthPx - scaledWidth)
++        val minX = minOf(0f, viewportSizePx[0] - scaledWidth)
+         return value.coerceIn(minX, 0f)
+     }
+ 
+-    fun clampedOffsetY(value: Float, scale: Float = gestureZoom): Float {
++    fun clampedOffsetY(value: Float, scale: Float): Float {
+         val scaledHeight = baseContentHeightPx * scale
+-        val minY = minOf(0f, viewportHeightPx - scaledHeight)
++        val minY = minOf(0f, viewportSizePx[1] - scaledHeight)
+         return value.coerceIn(minY, 0f)
+     }
+ 
+-    LaunchedEffect(baseContentWidthPx, baseContentHeightPx, viewportWidthPx, viewportHeightPx) {
+-        offsetX = clampedOffsetX(offsetX, gestureZoom)
+-        offsetY = clampedOffsetY(offsetY, gestureZoom)
+-    }
++    fun calculateVisibleWindow(offsetX: Float, offsetY: Float, scale: Float): GridWindow {
++        if (rowCount <= 0 || columnCount <= 0) return GridWindow(0, -1, 0, -1)
+ 
+-    LaunchedEffect(zoom) {
+-        gestureZoom = zoom.coerceIn(MIN_ZOOM, MAX_ZOOM)
+-        offsetX = clampedOffsetX(offsetX, gestureZoom)
+-        offsetY = clampedOffsetY(offsetY, gestureZoom)
+-    }
++        val viewportWidth = viewportSizePx[0]
++        val viewportHeight = viewportSizePx[1]
++        if (viewportWidth <= 0 || viewportHeight <= 0) {
++            return GridWindow(
++                startColumn = 0,
++                endColumn = minOf(columnCount - 1, 7),
++                startRow = 0,
++                endRow = minOf(rowCount - 1, 18),
++            )
++        }
+ 
+-    val visibleLeft = (((-offsetX).coerceAtLeast(0f)) / gestureZoom) - bufferPx
+-    val visibleTop = (((-offsetY).coerceAtLeast(0f)) / gestureZoom) - bufferPx
+-    val visibleRight = ((viewportWidthPx - offsetX) / gestureZoom) + bufferPx
+-    val visibleBottom = ((viewportHeightPx - offsetY) / gestureZoom) + bufferPx
+-
+-    fun firstVisibleColumn(): Int {
+-        var low = 0
+-        var high = columnCount - 1
+-        var result = 0
+-        while (low <= high) {
+-            val mid = (low + high) ushr 1
+-            val endPx = columnOffsetsPx[mid] + columnWidthsPx[mid]
+-            if (endPx >= visibleLeft) {
+-                result = mid
+-                high = mid - 1
+-            } else {
+-                low = mid + 1
++        val safeScale = scale.coerceAtLeast(MIN_ZOOM)
++        val visibleLeft = (((-offsetX).coerceAtLeast(0f)) / safeScale) - bufferPx
++        val visibleTop = (((-offsetY).coerceAtLeast(0f)) / safeScale) - bufferPx
++        val visibleRight = ((viewportWidth - offsetX) / safeScale) + bufferPx
++        val visibleBottom = ((viewportHeight - offsetY) / safeScale) + bufferPx
++
++        fun firstVisibleColumn(): Int {
++            var low = 0
++            var high = columnCount - 1
++            var result = 0
++            while (low <= high) {
++                val mid = (low + high) ushr 1
++                val endPx = columnOffsetsPx[mid] + columnWidthsPx[mid]
++                if (endPx >= visibleLeft) {
++                    result = mid
++                    high = mid - 1
++                } else {
++                    low = mid + 1
++                }
+             }
++            return result.coerceIn(0, columnCount - 1)
+         }
+-        return result.coerceIn(0, (columnCount - 1).coerceAtLeast(0))
+-    }
+ 
+-    fun lastVisibleColumn(): Int {
+-        var low = 0
+-        var high = columnCount - 1
+-        var result = (columnCount - 1).coerceAtLeast(0)
+-        while (low <= high) {
+-            val mid = (low + high) ushr 1
+-            val startPx = columnOffsetsPx[mid]
+-            if (startPx <= visibleRight) {
+-                result = mid
+-                low = mid + 1
+-            } else {
+-                high = mid - 1
++        fun lastVisibleColumn(): Int {
++            var low = 0
++            var high = columnCount - 1
++            var result = columnCount - 1
++            while (low <= high) {
++                val mid = (low + high) ushr 1
++                val startPx = columnOffsetsPx[mid]
++                if (startPx <= visibleRight) {
++                    result = mid
++                    low = mid + 1
++                } else {
++                    high = mid - 1
++                }
+             }
++            return result.coerceIn(0, columnCount - 1)
+         }
+-        return result.coerceIn(0, (columnCount - 1).coerceAtLeast(0))
+-    }
+ 
+-    fun firstVisibleRow(): Int {
+-        var low = 0
+-        var high = rowCount - 1
+-        var result = 0
+-        while (low <= high) {
+-            val mid = (low + high) ushr 1
+-            val endPx = rowOffsetsPx[mid] + rowHeightsPx[mid]
+-            if (endPx >= visibleTop) {
+-                result = mid
+-                high = mid - 1
+-            } else {
+-                low = mid + 1
++        fun firstVisibleRow(): Int {
++            var low = 0
++            var high = rowCount - 1
++            var result = 0
++            while (low <= high) {
++                val mid = (low + high) ushr 1
++                val endPx = rowOffsetsPx[mid] + rowHeightsPx[mid]
++                if (endPx >= visibleTop) {
++                    result = mid
++                    high = mid - 1
++                } else {
++                    low = mid + 1
++                }
+             }
++            return result.coerceIn(0, rowCount - 1)
+         }
+-        return result.coerceIn(0, (rowCount - 1).coerceAtLeast(0))
+-    }
+ 
+-    fun lastVisibleRow(): Int {
+-        var low = 0
+-        var high = rowCount - 1
+-        var result = (rowCount - 1).coerceAtLeast(0)
+-        while (low <= high) {
+-            val mid = (low + high) ushr 1
+-            val startPx = rowOffsetsPx[mid]
+-            if (startPx <= visibleBottom) {
+-                result = mid
+-                low = mid + 1
+-            } else {
+-                high = mid - 1
++        fun lastVisibleRow(): Int {
++            var low = 0
++            var high = rowCount - 1
++            var result = rowCount - 1
++            while (low <= high) {
++                val mid = (low + high) ushr 1
++                val startPx = rowOffsetsPx[mid]
++                if (startPx <= visibleBottom) {
++                    result = mid
++                    low = mid + 1
++                } else {
++                    high = mid - 1
++                }
+             }
++            return result.coerceIn(0, rowCount - 1)
+         }
+-        return result.coerceIn(0, (rowCount - 1).coerceAtLeast(0))
++
++        return GridWindow(
++            startColumn = firstVisibleColumn(),
++            endColumn = lastVisibleColumn(),
++            startRow = firstVisibleRow(),
++            endRow = lastVisibleRow(),
++        )
++    }
++
++    var visibleWindow by remember(rowCount, columnCount, rowGeometryVersion, columnGeometryVersion) {
++        mutableStateOf(
++            GridWindow(
++                startColumn = 0,
++                endColumn = minOf((columnCount - 1).coerceAtLeast(0), 7),
++                startRow = 0,
++                endRow = minOf((rowCount - 1).coerceAtLeast(0), 18),
++            ),
++        )
+     }
+ 
+-    val startColumn = firstVisibleColumn()
+-    val endColumn = lastVisibleColumn()
+-    val startRow = firstVisibleRow()
+-    val endRow = lastVisibleRow()
++    fun refreshVisibleWindow(offsetX: Float, offsetY: Float, scale: Float) {
++        val next = calculateVisibleWindow(offsetX, offsetY, scale)
++        if (next != visibleWindow) visibleWindow = next
++    }
++
++    LaunchedEffect(baseContentWidthPx, baseContentHeightPx, rowGeometryVersion, columnGeometryVersion) {
++        val scale = gestureZoomState.floatValue
++        val nextX = clampedOffsetX(offsetXState.floatValue, scale)
++        val nextY = clampedOffsetY(offsetYState.floatValue, scale)
++        offsetXState.floatValue = nextX
++        offsetYState.floatValue = nextY
++        refreshVisibleWindow(nextX, nextY, scale)
++    }
++
++    LaunchedEffect(zoom) {
++        val nextZoom = zoom.coerceIn(MIN_ZOOM, MAX_ZOOM)
++        gestureZoomState.floatValue = nextZoom
++        val nextX = clampedOffsetX(offsetXState.floatValue, nextZoom)
++        val nextY = clampedOffsetY(offsetYState.floatValue, nextZoom)
++        offsetXState.floatValue = nextX
++        offsetYState.floatValue = nextY
++        refreshVisibleWindow(nextX, nextY, nextZoom)
++    }
+ 
+     Surface(
+         modifier = modifier.fillMaxSize(),
+@@ -641,21 +689,36 @@ private fun SpreadsheetGrid(
+                 .clip(RoundedCornerShape(18.dp))
+                 .background(cellBackground)
+                 .onSizeChanged {
+-                    viewportWidthPx = it.width
+-                    viewportHeightPx = it.height
++                    viewportSizePx[0] = it.width
