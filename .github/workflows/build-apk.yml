@@ -10,7 +10,8 @@ on:
       - "v98_patch_parts/**"
       - "v99_patch_parts/**"
       - "v100_patch_parts/**"
-      - "v101_patch_parts/**"\n      - "v102_patch_parts/**"
+      - "v101_patch_parts/**"
+      - "v102_patch_parts/**"
 
 jobs:
   build:
