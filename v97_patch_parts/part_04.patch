@@ -1,0 +1,121 @@
+ import androidx.compose.runtime.mutableFloatStateOf
+ import androidx.compose.runtime.mutableIntStateOf
+ import androidx.compose.runtime.mutableStateMapOf
+-import androidx.compose.runtime.mutableStateListOf
+ import androidx.compose.runtime.mutableStateOf
+ import androidx.compose.runtime.remember
+ import androidx.compose.runtime.setValue
+@@ -75,7 +74,6 @@ import com.example.noteshiftapp.ui.components.AppLauncherMenuButton
+ import com.example.noteshiftapp.viewmodel.SheetsViewModel
+ import kotlin.math.max
+ import kotlin.math.roundToInt
+-import kotlinx.coroutines.delay
+ 
+ private val headerBackground = Color(0xFF20232D)
+ private val cellBackground = Color(0xFF12141B)
+@@ -113,25 +111,8 @@ fun TablesScreen(
+     var selectedColumnIndex by remember(selectedSheetId) { mutableStateOf<Int?>(null) }
+     var selectedCell by remember(selectedSheetId) { mutableStateOf<Pair<Int, Int>?>(null) }
+     var zoom by remember(selectedSheetId) { mutableFloatStateOf(DEFAULT_ZOOM) }
+-    var renderGrid by remember(selectedSheetId, showLauncherMenu) { mutableStateOf(false) }
+     val rowHeights = remember(selectedSheetId) { mutableStateMapOf<Int, Int>() }
+     val columnWidths = remember(selectedSheetId) { mutableStateMapOf<Int, Int>() }
+-    val visibleCells = remember(selectedSheetId) { mutableStateMapOf<String, String>() }
+-
+-    LaunchedEffect(selectedSheetId, selectedSheet?.cells) {
+-        visibleCells.clear()
+-        selectedSheet?.cells?.forEach { (key, value) ->
+-            visibleCells[key] = value
+-        }
+-    }
+-
+-    LaunchedEffect(selectedSheetId, showLauncherMenu) {
+-        renderGrid = false
+-        if (!showLauncherMenu && selectedSheet != null) {
+-            delay(90)
+-            renderGrid = true
+-        }
+-    }
+ 
+     fun cellKey(rowIndex: Int, columnIndex: Int): String = "$rowIndex:$columnIndex"
+     fun currentRowHeight(rowIndex: Int): Int = rowHeights[rowIndex] ?: DEFAULT_ROW_HEIGHT_DP
+@@ -257,58 +238,43 @@ fun TablesScreen(
+                     onZoomOut = { zoom = (zoom - 0.10f).coerceAtLeast(MIN_ZOOM) },
+                 )
+ 
+-                if (renderGrid && !showLauncherMenu) {
+-                    SpreadsheetGrid(
+-                        modifier = Modifier.weight(1f),
+-                        rowCount = selectedSheet.rowCount,
+-                        columnCount = selectedSheet.columnCount,
+-                        zoom = zoom,
+-                        selectedRowIndex = selectedRowIndex,
+-                        selectedColumnIndex = selectedColumnIndex,
+-                        selectedCell = selectedCell,
+-                        rowGeometryVersion = rowHeights.hashCode(),
+-                        columnGeometryVersion = columnWidths.hashCode(),
+-                        rowHeight = ::currentRowHeight,
+-                        columnWidth = ::currentColumnWidth,
+-                        cellValue = { rowIndex, columnIndex -> visibleCells[cellKey(rowIndex, columnIndex)].orEmpty() },
+-                        onRowHeaderClick = { rowIndex ->
+-                            selectedRowIndex = rowIndex
+-                            selectedCell = null
+-                        },
+-                        onColumnHeaderClick = { columnIndex ->
+-                            selectedColumnIndex = columnIndex
+-                            selectedCell = null
+-                        },
+-                        onRowResize = { rowIndex, delta -> adjustRowHeightByIndex(rowIndex, delta) },
+-                        onColumnResize = { columnIndex, delta -> adjustColumnWidthByIndex(columnIndex, delta) },
+-                        onCellClick = { rowIndex, columnIndex ->
+-                            selectedRowIndex = rowIndex
+-                            selectedColumnIndex = columnIndex
+-                            selectedCell = rowIndex to columnIndex
+-                        },
+-                        onCellLongClick = { rowIndex, columnIndex ->
+-                            selectedRowIndex = rowIndex
+-                            selectedColumnIndex = columnIndex
+-                            selectedCell = rowIndex to columnIndex
+-                            editingCell = rowIndex to columnIndex
+-                        },
+-                    )
+-                } else {
+-                    Surface(
+-                        modifier = Modifier.weight(1f).fillMaxWidth(),
+-                        shape = RoundedCornerShape(18.dp),
+-                        color = cellBackground,
+-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.28f)),
+-                    ) {
+-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+-                            Text(
+-                                text = if (showLauncherMenu) "Открой нужный раздел" else "Подготавливаю таблицу…",
+-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+-                                style = MaterialTheme.typography.bodyMedium,
+-                            )
+-                        }
+-                    }
+-                }
++                SpreadsheetGrid(
++                    modifier = Modifier.weight(1f),
++                    rowCount = selectedSheet.rowCount,
++                    columnCount = selectedSheet.columnCount,
++                    zoom = zoom,
++                    selectedRowIndex = selectedRowIndex,
++                    selectedColumnIndex = selectedColumnIndex,
++                    selectedCell = selectedCell,
++                    rowGeometryVersion = rowHeights.hashCode(),
++                    columnGeometryVersion = columnWidths.hashCode(),
++                    rowHeight = ::currentRowHeight,
++                    columnWidth = ::currentColumnWidth,
++                    cellValue = { rowIndex, columnIndex ->
++                        selectedSheet.cells[cellKey(rowIndex, columnIndex)].orEmpty()
++                    },
++                    onRowHeaderClick = { rowIndex ->
++                        selectedRowIndex = rowIndex
++                        selectedCell = null
++                    },
++                    onColumnHeaderClick = { columnIndex ->
++                        selectedColumnIndex = columnIndex
++                        selectedCell = null
++                    },
++                    onRowResize = { rowIndex, delta -> adjustRowHeightByIndex(rowIndex, delta) },

@@ -1,0 +1,16 @@
++        val filteredCells = selected.cells.filterKeys { key ->
++            val parts = key.split(':', limit = 2)
++            val row = parts.getOrNull(0)?.toIntOrNull() ?: return@filterKeys false
++            val column = parts.getOrNull(1)?.toIntOrNull() ?: return@filterKeys false
++            row in 0 until safeRows && column in 0 until safeColumns
++        }
++        val nextSheet = selected.copy(rowCount = safeRows, columnCount = safeColumns, cells = filteredCells)
++        _uiState.value = state.copy(
++            sheets = state.sheets.map { if (it.id == selected.id) nextSheet else it },
++        )
+         viewModelScope.launch {
+-            repository.resizeSheet(selected.id, rowCount, columnCount)
++            repository.resizeSheet(selected.id, safeRows, safeColumns)
+         }
+     }
+ 

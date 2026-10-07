@@ -1,0 +1,130 @@
++                    onColumnResize = { columnIndex, delta -> adjustColumnWidthByIndex(columnIndex, delta) },
++                    onCellClick = { rowIndex, columnIndex ->
++                        selectedRowIndex = rowIndex
++                        selectedColumnIndex = columnIndex
++                        selectedCell = rowIndex to columnIndex
++                    },
++                    onCellLongClick = { rowIndex, columnIndex ->
++                        selectedRowIndex = rowIndex
++                        selectedColumnIndex = columnIndex
++                        selectedCell = rowIndex to columnIndex
++                        editingCell = rowIndex to columnIndex
++                    },
++                )
+             }
+         }
+     }
+@@ -354,11 +320,9 @@ fun TablesScreen(
+     editingCell?.let { (rowIndex, columnIndex) ->
+         CellEditDialog(
+             cellName = "${columnName(columnIndex)}${rowIndex + 1}",
+-            initialValue = visibleCells[cellKey(rowIndex, columnIndex)].orEmpty(),
++            initialValue = selectedSheet?.cells?.get(cellKey(rowIndex, columnIndex)).orEmpty(),
+             onDismiss = { editingCell = null },
+             onConfirm = { value ->
+-                val key = cellKey(rowIndex, columnIndex)
+-                if (value.isBlank()) visibleCells.remove(key) else visibleCells[key] = value
+                 viewModel.updateCell(rowIndex, columnIndex, value)
+                 editingCell = null
+             },
+@@ -748,7 +712,7 @@ private fun SpreadsheetGrid(
+                             heightDp = rowHeightsDp[rowIndex],
+                             selectedRow = selectedRowIndex == rowIndex,
+                             selectedColumn = selectedColumnIndex == columnIndex,
+-                            selectedCell = selectedCell == (rowIndex to columnIndex),
++                            selectedCell = selectedCell?.let { it.first == rowIndex && it.second == columnIndex } == true,
+                             onClick = { if (SystemClock.uptimeMillis() >= suppressClicksUntilMs) onCellClick(rowIndex, columnIndex) },
+                             onLongClick = { if (SystemClock.uptimeMillis() >= suppressClicksUntilMs) onCellLongClick(rowIndex, columnIndex) },
+                             modifier = Modifier.offset {
+diff --git a/app/src/main/java/com/example/noteshiftapp/viewmodel/SheetsViewModel.kt b/app/src/main/java/com/example/noteshiftapp/viewmodel/SheetsViewModel.kt
+index fa65198..48598e8 100644
+--- a/app/src/main/java/com/example/noteshiftapp/viewmodel/SheetsViewModel.kt
++++ b/app/src/main/java/com/example/noteshiftapp/viewmodel/SheetsViewModel.kt
+@@ -9,6 +9,7 @@ import com.example.noteshiftapp.domain.model.SheetDocument
+ import kotlinx.coroutines.flow.MutableStateFlow
+ import kotlinx.coroutines.flow.StateFlow
+ import kotlinx.coroutines.flow.asStateFlow
++import kotlinx.coroutines.flow.combine
+ import kotlinx.coroutines.launch
+ 
+ data class SheetsUiState(
+@@ -22,26 +23,28 @@ data class SheetsUiState(
+ class SheetsViewModel(application: Application) : AndroidViewModel(application) {
+     private val repository = (application as NoteShiftApplication).appContainer.sheetsRepository
+ 
+-    private val _uiState = MutableStateFlow(SheetsUiState())
++    private val _uiState = MutableStateFlow(
++        SheetsUiState(
++            sheets = repository.sheetsFlow.value,
++            selectedSheetId = repository.selectedSheetIdFlow.value,
++        ),
++    )
+     val uiState: StateFlow<SheetsUiState> = _uiState.asStateFlow()
+ 
+     init {
+         viewModelScope.launch {
+-            repository.sheetsFlow.collect { sheets ->
+-                val currentSelected = _uiState.value.selectedSheetId
+-                val nextSelected = when {
+-                    sheets.isEmpty() -> null
+-                    sheets.any { it.id == currentSelected } -> currentSelected
+-                    else -> sheets.first().id
+-                }
+-                _uiState.value = _uiState.value.copy(sheets = sheets, selectedSheetId = nextSelected)
+-            }
+-        }
+-        viewModelScope.launch {
+-            repository.selectedSheetIdFlow.collect { selectedId ->
+-                _uiState.value = _uiState.value.copy(
+-                    selectedSheetId = selectedId ?: _uiState.value.sheets.firstOrNull()?.id,
++            combine(
++                repository.sheetsFlow,
++                repository.selectedSheetIdFlow,
++            ) { sheets, selectedId ->
++                val resolvedSelected = selectedId?.takeIf { id -> sheets.any { it.id == id } }
++                    ?: sheets.firstOrNull()?.id
++                SheetsUiState(
++                    sheets = sheets,
++                    selectedSheetId = resolvedSelected,
+                 )
++            }.collect { state ->
++                _uiState.value = state
+             }
+         }
+     }
+@@ -53,6 +56,8 @@ class SheetsViewModel(application: Application) : AndroidViewModel(application)
+     }
+ 
+     fun selectSheet(sheetId: String) {
++        if (_uiState.value.sheets.none { it.id == sheetId }) return
++        _uiState.value = _uiState.value.copy(selectedSheetId = sheetId)
+         viewModelScope.launch {
+             repository.selectSheet(sheetId)
+         }
+@@ -73,16 +78,38 @@ class SheetsViewModel(application: Application) : AndroidViewModel(application)
+     }
+ 
+     fun updateCell(rowIndex: Int, columnIndex: Int, value: String) {
+-        val selected = _uiState.value.selectedSheet ?: return
++        val state = _uiState.value
++        val selected = state.selectedSheet ?: return
++        val key = cellKey(rowIndex, columnIndex)
++        val nextCells = selected.cells.toMutableMap().apply {
++            if (value.isBlank()) remove(key) else put(key, value)
++        }
++        val nextSheet = selected.copy(cells = nextCells)
++        _uiState.value = state.copy(
++            sheets = state.sheets.map { if (it.id == selected.id) nextSheet else it },
++        )
+         viewModelScope.launch {
+-            repository.updateCell(selected.id, cellKey(rowIndex, columnIndex), value)
++            repository.updateCell(selected.id, key, value)
+         }
+     }
+ 
+     fun resizeSelectedSheet(rowCount: Int, columnCount: Int) {
+-        val selected = _uiState.value.selectedSheet ?: return
++        val state = _uiState.value
++        val selected = state.selectedSheet ?: return
++        val safeRows = rowCount.coerceIn(5, 2000)
++        val safeColumns = columnCount.coerceIn(3, 500)

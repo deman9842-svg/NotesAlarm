@@ -6,6 +6,7 @@ on:
     paths:
       - ".github/workflows/build-apk.yml"
       - "source_parts/**"
+      - "v97_patch_parts/**"
 
 jobs:
   build:
@@ -43,23 +44,33 @@ jobs:
           echo "715ab8e27201c3ac91196b485dcd3fcce81bc39d8d94cade1f2c1255f9fa369f  NoteShiftApp_v96_OPTIMIZED.zip" | sha256sum -c -
           unzip -q NoteShiftApp_v96_OPTIMIZED.zip
 
+      - name: Apply v97 fast-tabs patch
+        run: |
+          cat v97_patch_parts/part_*.patch > /tmp/v97_fast_tabs.patch
+          cd NoteShiftApp_v96_OPTIMIZED
+          git init -q
+          git apply --check /tmp/v97_fast_tabs.patch
+          git apply /tmp/v97_fast_tabs.patch
+          grep -q 'versionCode = 97' app/build.gradle.kts
+          grep -q 'versionName = "1.10.10"' app/build.gradle.kts
+
       - name: Build signed debug APK
         run: |
           cd NoteShiftApp_v96_OPTIMIZED
           rm -f local.properties
           gradle :app:assembleDebug --no-daemon --stacktrace
-          cp app/build/outputs/apk/debug/app-debug.apk ../NoteShiftApp_v1.10.9_OPTIMIZED.apk
+          cp app/build/outputs/apk/debug/app-debug.apk ../NoteShiftApp_v1.10.10_FAST_TABS.apk
 
       - name: Verify APK exists
         run: |
-          test -f NoteShiftApp_v1.10.9_OPTIMIZED.apk
-          ls -lh NoteShiftApp_v1.10.9_OPTIMIZED.apk
-          sha256sum NoteShiftApp_v1.10.9_OPTIMIZED.apk
+          test -f NoteShiftApp_v1.10.10_FAST_TABS.apk
+          ls -lh NoteShiftApp_v1.10.10_FAST_TABS.apk
+          sha256sum NoteShiftApp_v1.10.10_FAST_TABS.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: NoteShiftApp-v96-APK
-          path: NoteShiftApp_v1.10.9_OPTIMIZED.apk
+          name: NoteShiftApp-v97-APK
+          path: NoteShiftApp_v1.10.10_FAST_TABS.apk
           if-no-files-found: error
           retention-days: 30

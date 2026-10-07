@@ -1,0 +1,134 @@
++7. Версия повышена до 1.10.10 / 97; applicationId, Room version и ключ подписи не изменены.
+diff --git a/V96_OPTIMIZATION_REPORT.txt b/V96_OPTIMIZATION_REPORT.txt
+deleted file mode 100644
+index 7ebe14c..0000000
+--- a/V96_OPTIMIZATION_REPORT.txt
++++ /dev/null
+@@ -1,24 +0,0 @@
+-NoteShiftApp v96 — STATIC PERFORMANCE AUDIT
+-Version 1.10.9 / versionCode 96
+-
+-Проверены ключевые горячие места:
+-- NoteRepository / Room DAO;
+-- NotesViewModel / NoteDetailsViewModel;
+-- TaskTreeSection / NoteDetailsScreen / NotesScreen;
+-- Android AppWidget provider + RemoteViewsService;
+-- SpreadsheetGrid;
+-- Calendar/Sheets DataStore flows;
+-- AlarmMonitorService.
+-
+-Главные найденные причины лагов:
+-A) запись задачи в БД на каждый введённый символ;
+-B) после каждой такой записи полное обновление Android-виджета;
+-C) повторное чтение всех задач для вычисления completion;
+-D) отдельный UPDATE для каждой задачи при завершении заметки;
+-E) пересоздание массивов геометрии до 2000x500 на каждый кадр жеста в таблице;
+-F) лишние эмиссии DataStore потоков.
+-
+-Все пункты A-F исправлены в v96 без повышения версии схемы БД.
+-
+-Ограничение проверки:
+-В текущей контейнерной среде отсутствует Android SDK/Gradle runtime, поэтому APK здесь не компилировался. Выполнена статическая проверка изменённых Kotlin-файлов: синтаксических ошибок вида 'expecting/unclosed/unexpected tokens' не найдено. Финальную Android-компиляцию выполняет BUILD_TREE_UPDATE.cmd на ПК с Android Studio/SDK.
+diff --git a/app/build.gradle.kts b/app/build.gradle.kts
+index b4577cc..cefa140 100644
+--- a/app/build.gradle.kts
++++ b/app/build.gradle.kts
+@@ -13,8 +13,8 @@ android {
+         applicationId = "com.example.noteshiftapp"
+         minSdk = 26
+         targetSdk = 35
+-        versionCode = 96
+-        versionName = "1.10.9"
++        versionCode = 97
++        versionName = "1.10.10"
+ 
+         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+         vectorDrawables {
+diff --git a/app/src/main/java/com/example/noteshiftapp/data/repository/SheetsRepository.kt b/app/src/main/java/com/example/noteshiftapp/data/repository/SheetsRepository.kt
+index d9fe0af..215127f 100644
+--- a/app/src/main/java/com/example/noteshiftapp/data/repository/SheetsRepository.kt
++++ b/app/src/main/java/com/example/noteshiftapp/data/repository/SheetsRepository.kt
+@@ -7,13 +7,20 @@ import androidx.datastore.preferences.core.emptyPreferences
+ import androidx.datastore.preferences.core.stringPreferencesKey
+ import androidx.datastore.preferences.preferencesDataStore
+ import com.example.noteshiftapp.domain.model.SheetDocument
+-import kotlinx.coroutines.flow.Flow
+-import kotlinx.coroutines.flow.catch
+-import kotlinx.coroutines.flow.distinctUntilChanged
+-import kotlinx.coroutines.flow.map
++import java.util.UUID
++import kotlinx.coroutines.CompletableDeferred
++import kotlinx.coroutines.CoroutineScope
++import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.SupervisorJob
++import kotlinx.coroutines.flow.MutableStateFlow
++import kotlinx.coroutines.flow.StateFlow
++import kotlinx.coroutines.flow.asStateFlow
++import kotlinx.coroutines.flow.first
++import kotlinx.coroutines.launch
++import kotlinx.coroutines.sync.Mutex
++import kotlinx.coroutines.withContext
+ import org.json.JSONArray
+ import org.json.JSONObject
+-import java.util.UUID
+ 
+ private val Context.sheetsDataStore by preferencesDataStore(
+     name = "sheets_preferences",
+@@ -26,111 +33,172 @@ class SheetsRepository(
+     private val sheetsKey = stringPreferencesKey("sheets_documents_json")
+     private val selectedSheetIdKey = stringPreferencesKey("selected_sheet_id")
+ 
+-    val sheetsFlow: Flow<List<SheetDocument>> = context.sheetsDataStore.data
+-        .catch { emit(emptyPreferences()) }
+-        .map { preferences ->
+-            parseSheets(preferences[sheetsKey].orEmpty()).ifEmpty {
+-                listOf(defaultSheet())
+-            }
+-        }
+-        .distinctUntilChanged()
++    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
++    private val loaded = CompletableDeferred<Unit>()
++    private val writeMutex = Mutex()
++
++    private val _sheetsFlow = MutableStateFlow<List<SheetDocument>>(emptyList())
++    val sheetsFlow: StateFlow<List<SheetDocument>> = _sheetsFlow.asStateFlow()
++
++    private val _selectedSheetIdFlow = MutableStateFlow<String?>(null)
++    val selectedSheetIdFlow: StateFlow<String?> = _selectedSheetIdFlow.asStateFlow()
++
++    init {
++        scope.launchLoad()
++    }
+ 
+-    val selectedSheetIdFlow: Flow<String?> = context.sheetsDataStore.data
+-        .catch { emit(emptyPreferences()) }
+-        .map { preferences ->
+-            preferences[selectedSheetIdKey]
++    private fun CoroutineScope.launchLoad() {
++        launch {
++            try {
++                val preferences = context.sheetsDataStore.data.first()
++                val sheets = parseSheets(preferences[sheetsKey].orEmpty()).ifEmpty { listOf(defaultSheet()) }
++                val storedSelected = preferences[selectedSheetIdKey]
++                val selected = storedSelected?.takeIf { id -> sheets.any { it.id == id } } ?: sheets.first().id
++                _sheetsFlow.value = sheets
++                _selectedSheetIdFlow.value = selected
++            } catch (_: Throwable) {
++                val fallback = listOf(defaultSheet())
++                _sheetsFlow.value = fallback
++                _selectedSheetIdFlow.value = fallback.first().id
++            } finally {
++                loaded.complete(Unit)
++            }
+         }
+-        .distinctUntilChanged()
++    }
+ 
+-    suspend fun createSheet(title: String): String {
+-        val sheet = SheetDocument(
+-            id = UUID.randomUUID().toString(),
+-            title = title.ifBlank { "Лист ${System.currentTimeMillis().toString().takeLast(3)}" },
+-            rowCount = 200,
+-            columnCount = 60,
+-        )
+-        context.sheetsDataStore.edit { preferences ->

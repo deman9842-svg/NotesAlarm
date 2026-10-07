@@ -1,0 +1,146 @@
++                } else if (sheet.rowCount == safeRows && sheet.columnCount == safeColumns) {
++                    sheet
+                 } else {
+                     val filteredCells = sheet.cells.filterKeys { key ->
+-                        val parts = key.split(":")
+-                        val row = parts.getOrNull(0)?.toIntOrNull() ?: return@filterKeys false
+-                        val column = parts.getOrNull(1)?.toIntOrNull() ?: return@filterKeys false
++                        val separator = key.indexOf(':')
++                        if (separator <= 0 || separator >= key.lastIndex) return@filterKeys false
++                        val row = key.substring(0, separator).toIntOrNull() ?: return@filterKeys false
++                        val column = key.substring(separator + 1).toIntOrNull() ?: return@filterKeys false
+                         row in 0 until safeRows && column in 0 until safeColumns
+                     }
+                     sheet.copy(rowCount = safeRows, columnCount = safeColumns, cells = filteredCells)
+                 }
+             }
+-            preferences[sheetsKey] = serializeSheets(updated)
++            if (updated != current) {
++                _sheetsFlow.value = updated
++                persist(updated, _selectedSheetIdFlow.value)
++            }
++        }
++    }
++
++    private suspend fun <T> withWriteLock(block: suspend () -> T): T {
++        writeMutex.lock()
++        return try {
++            block()
++        } finally {
++            writeMutex.unlock()
++        }
++    }
++
++    private suspend fun persist(sheets: List<SheetDocument>, selectedSheetId: String?) {
++        val json = serializeSheets(sheets)
++        context.sheetsDataStore.edit { preferences ->
++            preferences[sheetsKey] = json
++            if (selectedSheetId != null) preferences[selectedSheetIdKey] = selectedSheetId
+         }
+     }
+ 
+@@ -176,7 +244,7 @@ class SheetsRepository(
+         val array = JSONArray()
+         sheets.forEach { sheet ->
+             val cellsObject = JSONObject()
+-            sheet.cells.toSortedMap().forEach { (key, value) ->
++            sheet.cells.forEach { (key, value) ->
+                 cellsObject.put(key, value)
+             }
+             array.put(
+diff --git a/app/src/main/java/com/example/noteshiftapp/navigation/AppNavHost.kt b/app/src/main/java/com/example/noteshiftapp/navigation/AppNavHost.kt
+index 16a97e3..2282a36 100644
+--- a/app/src/main/java/com/example/noteshiftapp/navigation/AppNavHost.kt
++++ b/app/src/main/java/com/example/noteshiftapp/navigation/AppNavHost.kt
+@@ -35,6 +35,26 @@ fun AppNavHost(
+     val backStackEntry by navController.currentBackStackEntryAsState()
+     val currentRoute = backStackEntry?.destination?.route
+ 
++    // Keep the four main-screen ViewModels alive for the whole Activity. Previously
++    // each tab had to recreate its collectors after navigation, so Room/DataStore
++    // could briefly return an empty/loading state and the screen visibly stalled.
++    val notesViewModel: NotesViewModel = viewModel(
++        key = "root_notes",
++        factory = NotesViewModel.factory(application),
++    )
++    val calendarViewModel: CalendarViewModel = viewModel(
++        key = "root_calendar",
++        factory = CalendarViewModel.factory(application),
++    )
++    val sheetsViewModel: SheetsViewModel = viewModel(
++        key = "root_sheets",
++        factory = SheetsViewModel.factory(application),
++    )
++    val alarmViewModel: AlarmViewModel = viewModel(
++        key = "root_alarms",
++        factory = AlarmViewModel.factory(application),
++    )
++
+     LaunchedEffect(openNoteId) {
+         val noteId = openNoteId ?: return@LaunchedEffect
+         if (noteId > 0L) {
+@@ -46,12 +66,14 @@ fun AppNavHost(
+     }
+ 
+     val navigateToDestination: (AppDestination) -> Unit = { destination ->
+-        navController.navigate(destination.route) {
+-            popUpTo(navController.graph.startDestinationId) {
+-                saveState = true
++        if (destination.route != currentRoute) {
++            navController.navigate(destination.route) {
++                popUpTo(navController.graph.startDestinationId) {
++                    saveState = true
++                }
++                launchSingleTop = true
++                restoreState = true
+             }
+-            launchSingleTop = true
+-            restoreState = true
+         }
+     }
+ 
+@@ -61,9 +83,8 @@ fun AppNavHost(
+         modifier = Modifier,
+     ) {
+         composable(AppDestination.Notes.route) {
+-            val vm: NotesViewModel = viewModel(factory = NotesViewModel.factory(application))
+             NotesScreen(
+-                viewModel = vm,
++                viewModel = notesViewModel,
+                 currentRoute = currentRoute,
+                 onDestinationClick = navigateToDestination,
+             ) { noteId ->
+@@ -71,25 +92,22 @@ fun AppNavHost(
+             }
+         }
+         composable(AppDestination.Calendar.route) {
+-            val vm: CalendarViewModel = viewModel(factory = CalendarViewModel.factory(application))
+             CalendarScreen(
+-                viewModel = vm,
++                viewModel = calendarViewModel,
+                 currentRoute = currentRoute,
+                 onDestinationClick = navigateToDestination,
+             )
+         }
+         composable(AppDestination.Tables.route) {
+-            val vm: SheetsViewModel = viewModel(factory = SheetsViewModel.factory(application))
+             TablesScreen(
+-                viewModel = vm,
++                viewModel = sheetsViewModel,
+                 currentRoute = currentRoute,
+                 onDestinationClick = navigateToDestination,
+             )
+         }
+         composable(AppDestination.Alarms.route) {
+-            val vm: AlarmViewModel = viewModel(factory = AlarmViewModel.factory(application))
+             AlarmsScreen(
+-                viewModel = vm,
++                viewModel = alarmViewModel,
+                 currentRoute = currentRoute,
+                 onDestinationClick = navigateToDestination,
+             )
+diff --git a/app/src/main/java/com/example/noteshiftapp/ui/tables/TablesScreen.kt b/app/src/main/java/com/example/noteshiftapp/ui/tables/TablesScreen.kt
+index 4f99fc9..4fb2de2 100644
+--- a/app/src/main/java/com/example/noteshiftapp/ui/tables/TablesScreen.kt
++++ b/app/src/main/java/com/example/noteshiftapp/ui/tables/TablesScreen.kt
+@@ -49,7 +49,6 @@ import androidx.compose.runtime.getValue

@@ -1,0 +1,130 @@
+-            val current = parseSheets(preferences[sheetsKey].orEmpty())
+-            preferences[sheetsKey] = serializeSheets(current + sheet)
+-            preferences[selectedSheetIdKey] = sheet.id
++    suspend fun createSheet(title: String): String = withContext(Dispatchers.IO) {
++        loaded.await()
++        withWriteLock {
++            val sheet = SheetDocument(
++                id = UUID.randomUUID().toString(),
++                title = title.ifBlank { "Лист ${System.currentTimeMillis().toString().takeLast(3)}" },
++                rowCount = 200,
++                columnCount = 60,
++            )
++            val updated = _sheetsFlow.value.ifEmpty { listOf(defaultSheet()) } + sheet
++            _sheetsFlow.value = updated
++            _selectedSheetIdFlow.value = sheet.id
++            persist(updated, sheet.id)
++            sheet.id
+         }
+-        return sheet.id
+     }
+ 
+-    suspend fun saveSheet(sheet: SheetDocument) {
+-        context.sheetsDataStore.edit { preferences ->
+-            val current = parseSheets(preferences[sheetsKey].orEmpty()).ifEmpty { listOf(defaultSheet()) }
++    suspend fun saveSheet(sheet: SheetDocument) = withContext(Dispatchers.IO) {
++        loaded.await()
++        withWriteLock {
++            val current = _sheetsFlow.value.ifEmpty { listOf(defaultSheet()) }
+             val updated = current.map { existing ->
+                 if (existing.id == sheet.id) sheet.copy(title = sheet.title.ifBlank { "Лист" }) else existing
+             }
+-            preferences[sheetsKey] = serializeSheets(updated)
++            _sheetsFlow.value = updated
++            persist(updated, _selectedSheetIdFlow.value)
+         }
+     }
+ 
+-    suspend fun renameSheet(sheetId: String, title: String) {
+-        context.sheetsDataStore.edit { preferences ->
+-            val current = parseSheets(preferences[sheetsKey].orEmpty()).ifEmpty { listOf(defaultSheet()) }
++    suspend fun renameSheet(sheetId: String, title: String) = withContext(Dispatchers.IO) {
++        loaded.await()
++        withWriteLock {
++            val current = _sheetsFlow.value.ifEmpty { listOf(defaultSheet()) }
+             val updated = current.map { sheet ->
+                 if (sheet.id == sheetId) sheet.copy(title = title.ifBlank { sheet.title }) else sheet
+             }
+-            preferences[sheetsKey] = serializeSheets(updated)
++            _sheetsFlow.value = updated
++            persist(updated, _selectedSheetIdFlow.value)
+         }
+     }
+ 
+-    suspend fun deleteSheet(sheetId: String) {
+-        context.sheetsDataStore.edit { preferences ->
+-            val current = parseSheets(preferences[sheetsKey].orEmpty()).ifEmpty { listOf(defaultSheet()) }
++    suspend fun deleteSheet(sheetId: String) = withContext(Dispatchers.IO) {
++        loaded.await()
++        withWriteLock {
++            val current = _sheetsFlow.value.ifEmpty { listOf(defaultSheet()) }
+             val updated = current.filterNot { it.id == sheetId }.ifEmpty { listOf(defaultSheet()) }
+-            preferences[sheetsKey] = serializeSheets(updated)
+-            val selectedId = preferences[selectedSheetIdKey]
+-            if (selectedId == sheetId || updated.none { it.id == selectedId }) {
+-                preferences[selectedSheetIdKey] = updated.first().id
+-            }
++            val currentSelected = _selectedSheetIdFlow.value
++            val nextSelected = currentSelected?.takeIf { id -> updated.any { it.id == id } } ?: updated.first().id
++            _sheetsFlow.value = updated
++            _selectedSheetIdFlow.value = nextSelected
++            persist(updated, nextSelected)
+         }
+     }
+ 
+-    suspend fun selectSheet(sheetId: String) {
++    suspend fun selectSheet(sheetId: String) = withContext(Dispatchers.IO) {
++        loaded.await()
++        if (_sheetsFlow.value.none { it.id == sheetId }) return@withContext
++        _selectedSheetIdFlow.value = sheetId
+         context.sheetsDataStore.edit { preferences ->
+             preferences[selectedSheetIdKey] = sheetId
+         }
+     }
+ 
+-    suspend fun updateCell(sheetId: String, cellKey: String, value: String) {
+-        context.sheetsDataStore.edit { preferences ->
+-            val current = parseSheets(preferences[sheetsKey].orEmpty()).ifEmpty { listOf(defaultSheet()) }
++    suspend fun updateCell(sheetId: String, cellKey: String, value: String) = withContext(Dispatchers.IO) {
++        loaded.await()
++        withWriteLock {
++            val current = _sheetsFlow.value.ifEmpty { listOf(defaultSheet()) }
+             val updated = current.map { sheet ->
+                 if (sheet.id != sheetId) {
+                     sheet
+                 } else {
+-                    val nextCells = sheet.cells.toMutableMap().apply {
+-                        if (value.isBlank()) remove(cellKey) else put(cellKey, value)
++                    val oldValue = sheet.cells[cellKey].orEmpty()
++                    val normalizedValue = value.takeUnless { it.isBlank() }.orEmpty()
++                    if (oldValue == normalizedValue) {
++                        sheet
++                    } else {
++                        val nextCells = sheet.cells.toMutableMap().apply {
++                            if (value.isBlank()) remove(cellKey) else put(cellKey, value)
++                        }
++                        sheet.copy(cells = nextCells)
+                     }
+-                    sheet.copy(cells = nextCells)
+                 }
+             }
+-            preferences[sheetsKey] = serializeSheets(updated)
++            if (updated != current) {
++                _sheetsFlow.value = updated
++                persist(updated, _selectedSheetIdFlow.value)
++            }
+         }
+     }
+ 
+-    suspend fun resizeSheet(sheetId: String, rowCount: Int, columnCount: Int) {
++    suspend fun resizeSheet(sheetId: String, rowCount: Int, columnCount: Int) = withContext(Dispatchers.IO) {
++        loaded.await()
+         val safeRows = rowCount.coerceIn(5, 2000)
+         val safeColumns = columnCount.coerceIn(3, 500)
+-        context.sheetsDataStore.edit { preferences ->
+-            val current = parseSheets(preferences[sheetsKey].orEmpty()).ifEmpty { listOf(defaultSheet()) }
++        withWriteLock {
++            val current = _sheetsFlow.value.ifEmpty { listOf(defaultSheet()) }
+             val updated = current.map { sheet ->
+                 if (sheet.id != sheetId) {
+                     sheet
