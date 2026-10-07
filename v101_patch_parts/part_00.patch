@@ -37,10 +37,10 @@ index 7e56559..104254a 100644
                  )
 diff --git a/app/src/main/java/com/example/noteshiftapp/navigation/ReliableAppNavHost.kt b/app/src/main/java/com/example/noteshiftapp/navigation/ReliableAppNavHost.kt
 new file mode 100644
-index 0000000..9fc3b53
+index 0000000..81cc32c
 --- /dev/null
 +++ b/app/src/main/java/com/example/noteshiftapp/navigation/ReliableAppNavHost.kt
-@@ -0,0 +1,135 @@
+@@ -0,0 +1,81 @@
 +package com.example.noteshiftapp.navigation
 +
 +import android.app.Application
@@ -67,117 +67,63 @@ index 0000000..9fc3b53
 +import com.example.noteshiftapp.viewmodel.NotesViewModel
 +import com.example.noteshiftapp.viewmodel.SheetsViewModel
 +
-+/**
-+ * Reliable main navigation. Main screens are real Navigation Compose destinations,
-+ * while their ViewModels live at the Activity composition root so data stays warm.
-+ */
 +@Composable
 +fun ReliableAppNavHost(
 +    openNoteId: Long? = null,
 +    onOpenNoteConsumed: () -> Unit = {},
 +) {
 +    val navController = rememberNavController()
-+    val context = LocalContext.current
-+    val application = context.applicationContext as Application
++    val application = LocalContext.current.applicationContext as Application
 +    val backStackEntry by navController.currentBackStackEntryAsState()
 +    val currentRoute = backStackEntry?.destination?.route
 +
-+    val notesViewModel: NotesViewModel = viewModel(
-+        key = "root_notes",
-+        factory = NotesViewModel.factory(application),
-+    )
-+    val calendarViewModel: CalendarViewModel = viewModel(
-+        key = "root_calendar",
-+        factory = CalendarViewModel.factory(application),
-+    )
-+    val sheetsViewModel: SheetsViewModel = viewModel(
-+        key = "root_sheets",
-+        factory = SheetsViewModel.factory(application),
-+    )
-+    val alarmViewModel: AlarmViewModel = viewModel(
-+        key = "root_alarms",
-+        factory = AlarmViewModel.factory(application),
-+    )
++    val notesViewModel: NotesViewModel = viewModel(key = "root_notes", factory = NotesViewModel.factory(application))
++    val calendarViewModel: CalendarViewModel = viewModel(key = "root_calendar", factory = CalendarViewModel.factory(application))
++    val sheetsViewModel: SheetsViewModel = viewModel(key = "root_sheets", factory = SheetsViewModel.factory(application))
++    val alarmViewModel: AlarmViewModel = viewModel(key = "root_alarms", factory = AlarmViewModel.factory(application))
 +
 +    LaunchedEffect(openNoteId) {
 +        val noteId = openNoteId ?: return@LaunchedEffect
-+        if (noteId > 0L) {
-+            navController.navigate(AppDestination.NoteDetails.createRoute(noteId)) {
-+                launchSingleTop = true
-+            }
-+        }
++        if (noteId > 0L) navController.navigate(AppDestination.NoteDetails.createRoute(noteId)) { launchSingleTop = true }
 +        onOpenNoteConsumed()
 +    }
 +
 +    val navigateToDestination: (AppDestination) -> Unit = { destination ->
 +        if (destination in AppDestination.bottomItems && destination.route != currentRoute) {
 +            navController.navigate(destination.route) {
-+                popUpTo(navController.graph.startDestinationId) {
-+                    saveState = true
-+                }
++                popUpTo(navController.graph.startDestinationId) { saveState = true }
 +                launchSingleTop = true
 +                restoreState = true
 +            }
 +        }
 +    }
 +
-+    NavHost(
-+        navController = navController,
-+        startDestination = AppDestination.Notes.route,
-+        modifier = Modifier,
-+    ) {
++    NavHost(navController = navController, startDestination = AppDestination.Notes.route, modifier = Modifier) {
 +        composable(AppDestination.Notes.route) {
-+            NotesScreen(
-+                viewModel = notesViewModel,
-+                currentRoute = currentRoute,
-+                onDestinationClick = navigateToDestination,
-+            ) { noteId ->
++            NotesScreen(notesViewModel, currentRoute, navigateToDestination) { noteId ->
 +                navController.navigate(AppDestination.NoteDetails.createRoute(noteId))
 +            }
 +        }
-+        composable(AppDestination.Calendar.route) {
-+            CalendarScreen(
-+                viewModel = calendarViewModel,
-+                currentRoute = currentRoute,
-+                onDestinationClick = navigateToDestination,
-+            )
-+        }
-+        composable(AppDestination.Tables.route) {
-+            TablesScreen(
-+                viewModel = sheetsViewModel,
-+                currentRoute = currentRoute,
-+                onDestinationClick = navigateToDestination,
-+            )
-+        }
-+        composable(AppDestination.Alarms.route) {
-+            AlarmsScreen(
-+                viewModel = alarmViewModel,
-+                currentRoute = currentRoute,
-+                onDestinationClick = navigateToDestination,
-+            )
-+        }
++        composable(AppDestination.Calendar.route) { CalendarScreen(calendarViewModel, currentRoute, navigateToDestination) }
++        composable(AppDestination.Tables.route) { TablesScreen(sheetsViewModel, currentRoute, navigateToDestination) }
++        composable(AppDestination.Alarms.route) { AlarmsScreen(alarmViewModel, currentRoute, navigateToDestination) }
 +        composable(
 +            route = AppDestination.NoteDetails.route,
 +            arguments = listOf(navArgument(AppDestination.NoteDetails.NOTE_ID_ARG) { type = NavType.LongType }),
 +        ) { entry ->
 +            val noteId = entry.arguments?.getLong(AppDestination.NoteDetails.NOTE_ID_ARG) ?: 0L
-+            val vm: NoteDetailsViewModel = viewModel(
-+                key = "note_$noteId",
-+                factory = NoteDetailsViewModel.factory(application, noteId),
-+            )
++            val vm: NoteDetailsViewModel = viewModel(key = "note_$noteId", factory = NoteDetailsViewModel.factory(application, noteId))
 +            NoteDetailsScreen(
 +                viewModel = vm,
 +                onBackClick = { navController.popBackStack() },
 +                onNoteDeleted = { navController.popBackStack() },
-+                onOpenNote = { childNoteId ->
-+                    navController.navigate(AppDestination.NoteDetails.createRoute(childNoteId))
-+                },
++                onOpenNote = { childNoteId -> navController.navigate(AppDestination.NoteDetails.createRoute(childNoteId)) },
 +            )
 +        }
 +    }
 +}
 diff --git a/app/src/main/java/com/example/noteshiftapp/ui/components/AppLauncherMenu.kt b/app/src/main/java/com/example/noteshiftapp/ui/components/AppLauncherMenu.kt
-index 5c12ca3..872c1cc 100644
+index 562fa02..0096b36 100644
 --- a/app/src/main/java/com/example/noteshiftapp/ui/components/AppLauncherMenu.kt
 +++ b/app/src/main/java/com/example/noteshiftapp/ui/components/AppLauncherMenu.kt
 @@ -7,8 +7,6 @@ import androidx.compose.foundation.layout.Box
@@ -189,12 +135,11 @@ index 5c12ca3..872c1cc 100644
  import androidx.compose.foundation.layout.size
  import androidx.compose.foundation.layout.width
  import androidx.compose.foundation.shape.CircleShape
-@@ -26,12 +24,9 @@ import androidx.compose.material3.Surface
- import androidx.compose.material3.Text
+@@ -27,11 +25,8 @@ import androidx.compose.material3.Text
  import androidx.compose.runtime.Composable
  import androidx.compose.ui.Alignment
--import androidx.compose.ui.platform.LocalConfiguration
  import androidx.compose.ui.Modifier
+-import androidx.compose.ui.platform.LocalConfiguration
  import androidx.compose.ui.draw.clip
 -import androidx.compose.ui.graphics.Color
  import androidx.compose.ui.graphics.vector.ImageVector
@@ -212,11 +157,15 @@ index 5c12ca3..872c1cc 100644
      Box {
          Surface(
              modifier = Modifier
-@@ -60,110 +52,78 @@ fun AppLauncherMenuButton(
-                 NineDotsIcon()
-             }
+@@ -56,134 +48,59 @@ fun AppLauncherMenuButton(
+             tonalElevation = 6.dp,
+             shadowElevation = 6.dp,
+         ) {
+-            Box(contentAlignment = Alignment.Center) {
+-                NineDotsIcon()
+-            }
++            Box(contentAlignment = Alignment.Center) { NineDotsIcon() }
          }
-+
          DropdownMenu(
              expanded = expanded,
              onDismissRequest = { onExpandedChange(false) },
@@ -279,43 +228,22 @@ index 5c12ca3..872c1cc 100644
 -                        },
 -                    )
 -                }
--            }
-+            DestinationMenuItem(
-+                destination = AppDestination.Notes,
-+                icon = Icons.Outlined.Description,
-+                selected = currentRoute == AppDestination.Notes.route,
-+                onClick = { destination ->
-+                    onDestinationClick(destination)
-+                    onExpandedChange(false)
-+                },
-+            )
-+            DestinationMenuItem(
-+                destination = AppDestination.Calendar,
-+                icon = Icons.Outlined.DateRange,
-+                selected = currentRoute == AppDestination.Calendar.route,
-+                onClick = { destination ->
-+                    onDestinationClick(destination)
-+                    onExpandedChange(false)
-+                },
-+            )
-+            DestinationMenuItem(
-+                destination = AppDestination.Tables,
-+                icon = Icons.Outlined.TableChart,
-+                selected = currentRoute == AppDestination.Tables.route,
-+                onClick = { destination ->
-+                    onDestinationClick(destination)
-+                    onExpandedChange(false)
-+                },
-+            )
-+            DestinationMenuItem(
-+                destination = AppDestination.Alarms,
-+                icon = Icons.Outlined.Alarm,
-+                selected = currentRoute == AppDestination.Alarms.route,
-+                onClick = { destination ->
-+                    onDestinationClick(destination)
-+                    onExpandedChange(false)
-+                },
-+            )
++            DestinationMenuItem(AppDestination.Notes, Icons.Outlined.Description, currentRoute == AppDestination.Notes.route) { destination ->
++                onDestinationClick(destination)
++                onExpandedChange(false)
++            }
++            DestinationMenuItem(AppDestination.Calendar, Icons.Outlined.DateRange, currentRoute == AppDestination.Calendar.route) { destination ->
++                onDestinationClick(destination)
++                onExpandedChange(false)
++            }
++            DestinationMenuItem(AppDestination.Tables, Icons.Outlined.TableChart, currentRoute == AppDestination.Tables.route) { destination ->
++                onDestinationClick(destination)
++                onExpandedChange(false)
++            }
++            DestinationMenuItem(AppDestination.Alarms, Icons.Outlined.Alarm, currentRoute == AppDestination.Alarms.route) { destination ->
++                onDestinationClick(destination)
++                onExpandedChange(false)
+             }
          }
      }
  }
@@ -349,21 +277,12 @@ index 5c12ca3..872c1cc 100644
 -                ),
 -            contentAlignment = Alignment.Center,
 -        ) {
-+    DropdownMenuItem(
-+        text = {
-+            Text(
-+                text = destination.title,
-+                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-+            )
-+        },
-+        leadingIcon = {
-             Icon(
-                 imageVector = icon,
+-            Icon(
+-                imageVector = icon,
 -                contentDescription = title,
-+                contentDescription = destination.title,
-                 tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+-                tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
 -                modifier = Modifier.size(28.dp),
-             )
+-            )
 -        }
 -        Text(
 -            text = title,
@@ -371,19 +290,30 @@ index 5c12ca3..872c1cc 100644
 -            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
 -        )
 -    }
-+        },
++    DropdownMenuItem(
++        text = { Text(destination.title, color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface) },
++        leadingIcon = { Icon(icon, contentDescription = destination.title, tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface) },
 +        onClick = { onClick(destination) },
 +    )
  }
  
  @Composable
-@@ -179,11 +139,10 @@ fun NineDotsIcon(modifier: Modifier = Modifier) {
-                         modifier = Modifier
-                             .size(6.dp)
-                             .clip(CircleShape)
+ fun NineDotsIcon(modifier: Modifier = Modifier) {
+-    Column(
+-        modifier = modifier,
+-        verticalArrangement = Arrangement.spacedBy(4.dp),
+-    ) {
++    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+         repeat(3) {
+             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                 repeat(3) {
+-                    Spacer(
+-                        modifier = Modifier
+-                            .size(6.dp)
+-                            .clip(CircleShape)
 -                            .background(MaterialTheme.colorScheme.onSurface)
-+                            .background(MaterialTheme.colorScheme.onSurface),
-                     )
+-                    )
++                    Spacer(Modifier.size(6.dp).clip(CircleShape).background(MaterialTheme.colorScheme.onSurface))
                  }
              }
          }
