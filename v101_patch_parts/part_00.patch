@@ -1,0 +1,392 @@
+diff --git a/app/build.gradle.kts b/app/build.gradle.kts
+index da80fca..86a5023 100644
+--- a/app/build.gradle.kts
++++ b/app/build.gradle.kts
+@@ -13,8 +13,8 @@ android {
+         applicationId = "com.example.noteshiftapp"
+         minSdk = 26
+         targetSdk = 35
+-        versionCode = 100
+-        versionName = "1.10.13"
++        versionCode = 101
++        versionName = "1.10.14"
+ 
+         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+         vectorDrawables {
+diff --git a/app/src/main/java/com/example/noteshiftapp/MainActivity.kt b/app/src/main/java/com/example/noteshiftapp/MainActivity.kt
+index 7e56559..104254a 100644
+--- a/app/src/main/java/com/example/noteshiftapp/MainActivity.kt
++++ b/app/src/main/java/com/example/noteshiftapp/MainActivity.kt
+@@ -14,7 +14,7 @@ import androidx.compose.runtime.LaunchedEffect
+ import androidx.compose.runtime.mutableStateOf
+ import com.example.noteshiftapp.service.AlarmMonitorService
+ import androidx.core.content.ContextCompat
+-import com.example.noteshiftapp.navigation.AppNavHost
++import com.example.noteshiftapp.navigation.ReliableAppNavHost
+ import com.example.noteshiftapp.ui.theme.NoteShiftTheme
+ 
+ class MainActivity : ComponentActivity() {
+@@ -46,7 +46,7 @@ class MainActivity : ComponentActivity() {
+                     }
+                 }
+ 
+-                AppNavHost(
++                ReliableAppNavHost(
+                     openNoteId = pendingWidgetNoteId.value,
+                     onOpenNoteConsumed = { pendingWidgetNoteId.value = null },
+                 )
+diff --git a/app/src/main/java/com/example/noteshiftapp/navigation/ReliableAppNavHost.kt b/app/src/main/java/com/example/noteshiftapp/navigation/ReliableAppNavHost.kt
+new file mode 100644
+index 0000000..9fc3b53
+--- /dev/null
++++ b/app/src/main/java/com/example/noteshiftapp/navigation/ReliableAppNavHost.kt
+@@ -0,0 +1,135 @@
++package com.example.noteshiftapp.navigation
++
++import android.app.Application
++import androidx.compose.runtime.Composable
++import androidx.compose.runtime.LaunchedEffect
++import androidx.compose.runtime.getValue
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.platform.LocalContext
++import androidx.lifecycle.viewmodel.compose.viewModel
++import androidx.navigation.NavType
++import androidx.navigation.compose.NavHost
++import androidx.navigation.compose.composable
++import androidx.navigation.compose.currentBackStackEntryAsState
++import androidx.navigation.compose.rememberNavController
++import androidx.navigation.navArgument
++import com.example.noteshiftapp.ui.alarms.AlarmsScreen
++import com.example.noteshiftapp.ui.calendar.CalendarScreen
++import com.example.noteshiftapp.ui.note_details.NoteDetailsScreen
++import com.example.noteshiftapp.ui.notes.NotesScreen
++import com.example.noteshiftapp.ui.tables.TablesScreen
++import com.example.noteshiftapp.viewmodel.AlarmViewModel
++import com.example.noteshiftapp.viewmodel.CalendarViewModel
++import com.example.noteshiftapp.viewmodel.NoteDetailsViewModel
++import com.example.noteshiftapp.viewmodel.NotesViewModel
++import com.example.noteshiftapp.viewmodel.SheetsViewModel
++
++/**
++ * Reliable main navigation. Main screens are real Navigation Compose destinations,
++ * while their ViewModels live at the Activity composition root so data stays warm.
++ */
++@Composable
++fun ReliableAppNavHost(
++    openNoteId: Long? = null,
++    onOpenNoteConsumed: () -> Unit = {},
++) {
++    val navController = rememberNavController()
++    val context = LocalContext.current
++    val application = context.applicationContext as Application
++    val backStackEntry by navController.currentBackStackEntryAsState()
++    val currentRoute = backStackEntry?.destination?.route
++
++    val notesViewModel: NotesViewModel = viewModel(
++        key = "root_notes",
++        factory = NotesViewModel.factory(application),
++    )
++    val calendarViewModel: CalendarViewModel = viewModel(
++        key = "root_calendar",
++        factory = CalendarViewModel.factory(application),
++    )
++    val sheetsViewModel: SheetsViewModel = viewModel(
++        key = "root_sheets",
++        factory = SheetsViewModel.factory(application),
++    )
++    val alarmViewModel: AlarmViewModel = viewModel(
++        key = "root_alarms",
++        factory = AlarmViewModel.factory(application),
++    )
++
++    LaunchedEffect(openNoteId) {
++        val noteId = openNoteId ?: return@LaunchedEffect
++        if (noteId > 0L) {
++            navController.navigate(AppDestination.NoteDetails.createRoute(noteId)) {
++                launchSingleTop = true
++            }
++        }
++        onOpenNoteConsumed()
++    }
++
++    val navigateToDestination: (AppDestination) -> Unit = { destination ->
++        if (destination in AppDestination.bottomItems && destination.route != currentRoute) {
++            navController.navigate(destination.route) {
++                popUpTo(navController.graph.startDestinationId) {
++                    saveState = true
++                }
++                launchSingleTop = true
++                restoreState = true
++            }
++        }
++    }
++
++    NavHost(
++        navController = navController,
++        startDestination = AppDestination.Notes.route,
++        modifier = Modifier,
++    ) {
++        composable(AppDestination.Notes.route) {
++            NotesScreen(
++                viewModel = notesViewModel,
++                currentRoute = currentRoute,
++                onDestinationClick = navigateToDestination,
++            ) { noteId ->
++                navController.navigate(AppDestination.NoteDetails.createRoute(noteId))
++            }
++        }
++        composable(AppDestination.Calendar.route) {
++            CalendarScreen(
++                viewModel = calendarViewModel,
++                currentRoute = currentRoute,
++                onDestinationClick = navigateToDestination,
++            )
++        }
++        composable(AppDestination.Tables.route) {
++            TablesScreen(
++                viewModel = sheetsViewModel,
++                currentRoute = currentRoute,
++                onDestinationClick = navigateToDestination,
++            )
++        }
++        composable(AppDestination.Alarms.route) {
++            AlarmsScreen(
++                viewModel = alarmViewModel,
++                currentRoute = currentRoute,
++                onDestinationClick = navigateToDestination,
++            )
++        }
++        composable(
++            route = AppDestination.NoteDetails.route,
++            arguments = listOf(navArgument(AppDestination.NoteDetails.NOTE_ID_ARG) { type = NavType.LongType }),
++        ) { entry ->
++            val noteId = entry.arguments?.getLong(AppDestination.NoteDetails.NOTE_ID_ARG) ?: 0L
++            val vm: NoteDetailsViewModel = viewModel(
++                key = "note_$noteId",
++                factory = NoteDetailsViewModel.factory(application, noteId),
++            )
++            NoteDetailsScreen(
++                viewModel = vm,
++                onBackClick = { navController.popBackStack() },
++                onNoteDeleted = { navController.popBackStack() },
++                onOpenNote = { childNoteId ->
++                    navController.navigate(AppDestination.NoteDetails.createRoute(childNoteId))
++                },
++            )
++        }
++    }
++}
+diff --git a/app/src/main/java/com/example/noteshiftapp/ui/components/AppLauncherMenu.kt b/app/src/main/java/com/example/noteshiftapp/ui/components/AppLauncherMenu.kt
+index 5c12ca3..872c1cc 100644
+--- a/app/src/main/java/com/example/noteshiftapp/ui/components/AppLauncherMenu.kt
++++ b/app/src/main/java/com/example/noteshiftapp/ui/components/AppLauncherMenu.kt
+@@ -7,8 +7,6 @@ import androidx.compose.foundation.layout.Box
+ import androidx.compose.foundation.layout.Column
+ import androidx.compose.foundation.layout.Row
+ import androidx.compose.foundation.layout.Spacer
+-import androidx.compose.foundation.layout.fillMaxWidth
+-import androidx.compose.foundation.layout.padding
+ import androidx.compose.foundation.layout.size
+ import androidx.compose.foundation.layout.width
+ import androidx.compose.foundation.shape.CircleShape
+@@ -26,12 +24,9 @@ import androidx.compose.material3.Surface
+ import androidx.compose.material3.Text
+ import androidx.compose.runtime.Composable
+ import androidx.compose.ui.Alignment
+-import androidx.compose.ui.platform.LocalConfiguration
+ import androidx.compose.ui.Modifier
+ import androidx.compose.ui.draw.clip
+-import androidx.compose.ui.graphics.Color
+ import androidx.compose.ui.graphics.vector.ImageVector
+-import androidx.compose.ui.text.font.FontWeight
+ import androidx.compose.ui.unit.dp
+ import com.example.noteshiftapp.navigation.AppDestination
+ 
+@@ -42,9 +37,6 @@ fun AppLauncherMenuButton(
+     currentRoute: String?,
+     onDestinationClick: (AppDestination) -> Unit,
+ ) {
+-    val screenWidthDp = LocalConfiguration.current.screenWidthDp
+-    val menuWidthDp = (screenWidthDp - 16).coerceIn(220, 360)
+-    val itemWidthDp = ((menuWidthDp - 28) / 4).coerceIn(48, 76)
+     Box {
+         Surface(
+             modifier = Modifier
+@@ -60,110 +52,78 @@ fun AppLauncherMenuButton(
+                 NineDotsIcon()
+             }
+         }
++
+         DropdownMenu(
+             expanded = expanded,
+             onDismissRequest = { onExpandedChange(false) },
+             modifier = Modifier
+-                .width(menuWidthDp.dp)
+-                .clip(RoundedCornerShape(28.dp))
++                .width(260.dp)
++                .clip(RoundedCornerShape(22.dp))
+                 .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+         ) {
+-            Surface(
+-                modifier = Modifier.fillMaxWidth(),
+-                color = Color.Transparent,
+-            ) {
+-                Row(
+-                    modifier = Modifier
+-                        .fillMaxWidth()
+-                        .padding(horizontal = 14.dp, vertical = 18.dp),
+-                    horizontalArrangement = Arrangement.SpaceEvenly,
+-                    verticalAlignment = Alignment.Top,
+-                ) {
+-                    LauncherMenuItem(
+-                        title = AppDestination.Notes.title,
+-                        icon = Icons.Outlined.Description,
+-                        selected = currentRoute == AppDestination.Notes.route,
+-                        itemWidthDp = itemWidthDp,
+-                        onClick = {
+-                            onExpandedChange(false)
+-                            onDestinationClick(AppDestination.Notes)
+-                        },
+-                    )
+-                    LauncherMenuItem(
+-                        title = AppDestination.Calendar.title,
+-                        icon = Icons.Outlined.DateRange,
+-                        selected = currentRoute == AppDestination.Calendar.route,
+-                        itemWidthDp = itemWidthDp,
+-                        onClick = {
+-                            onExpandedChange(false)
+-                            onDestinationClick(AppDestination.Calendar)
+-                        },
+-                    )
+-                    LauncherMenuItem(
+-                        title = AppDestination.Tables.title,
+-                        icon = Icons.Outlined.TableChart,
+-                        selected = currentRoute == AppDestination.Tables.route,
+-                        itemWidthDp = itemWidthDp,
+-                        onClick = {
+-                            onExpandedChange(false)
+-                            onDestinationClick(AppDestination.Tables)
+-                        },
+-                    )
+-                    LauncherMenuItem(
+-                        title = AppDestination.Alarms.title,
+-                        icon = Icons.Outlined.Alarm,
+-                        selected = currentRoute == AppDestination.Alarms.route,
+-                        itemWidthDp = itemWidthDp,
+-                        onClick = {
+-                            onExpandedChange(false)
+-                            onDestinationClick(AppDestination.Alarms)
+-                        },
+-                    )
+-                }
+-            }
++            DestinationMenuItem(
++                destination = AppDestination.Notes,
++                icon = Icons.Outlined.Description,
++                selected = currentRoute == AppDestination.Notes.route,
++                onClick = { destination ->
++                    onDestinationClick(destination)
++                    onExpandedChange(false)
++                },
++            )
++            DestinationMenuItem(
++                destination = AppDestination.Calendar,
++                icon = Icons.Outlined.DateRange,
++                selected = currentRoute == AppDestination.Calendar.route,
++                onClick = { destination ->
++                    onDestinationClick(destination)
++                    onExpandedChange(false)
++                },
++            )
++            DestinationMenuItem(
++                destination = AppDestination.Tables,
++                icon = Icons.Outlined.TableChart,
++                selected = currentRoute == AppDestination.Tables.route,
++                onClick = { destination ->
++                    onDestinationClick(destination)
++                    onExpandedChange(false)
++                },
++            )
++            DestinationMenuItem(
++                destination = AppDestination.Alarms,
++                icon = Icons.Outlined.Alarm,
++                selected = currentRoute == AppDestination.Alarms.route,
++                onClick = { destination ->
++                    onDestinationClick(destination)
++                    onExpandedChange(false)
++                },
++            )
+         }
+     }
+ }
+ 
+ @Composable
+-private fun LauncherMenuItem(
+-    title: String,
++private fun DestinationMenuItem(
++    destination: AppDestination,
+     icon: ImageVector,
+     selected: Boolean,
+-    itemWidthDp: Int,
+-    onClick: () -> Unit,
++    onClick: (AppDestination) -> Unit,
+ ) {
+-    Column(
+-        modifier = Modifier
+-            .width(itemWidthDp.dp)
+-            .clickable(onClick = onClick)
+-            .padding(vertical = 4.dp),
+-        horizontalAlignment = Alignment.CenterHorizontally,
+-        verticalArrangement = Arrangement.spacedBy(10.dp),
+-    ) {
+-        Box(
+-            modifier = Modifier
+-                .size(58.dp)
+-                .clip(CircleShape)
+-                .background(
+-                    if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+-                    else MaterialTheme.colorScheme.surfaceContainerHighest,
+-                ),
+-            contentAlignment = Alignment.Center,
+-        ) {
++    DropdownMenuItem(
++        text = {
++            Text(
++                text = destination.title,
++                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
++            )
++        },
++        leadingIcon = {
+             Icon(
+                 imageVector = icon,
+-                contentDescription = title,
++                contentDescription = destination.title,
+                 tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+-                modifier = Modifier.size(28.dp),
+             )
+-        }
+-        Text(
+-            text = title,
+-            style = MaterialTheme.typography.bodyMedium,
+-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+-        )
+-    }
++        },
++        onClick = { onClick(destination) },
++    )
+ }
+ 
+ @Composable
+@@ -179,11 +139,10 @@ fun NineDotsIcon(modifier: Modifier = Modifier) {
+                         modifier = Modifier
+                             .size(6.dp)
+                             .clip(CircleShape)
+-                            .background(MaterialTheme.colorScheme.onSurface)
++                            .background(MaterialTheme.colorScheme.onSurface),
+                     )
+                 }
+             }
+         }
+     }
+ }
+-
