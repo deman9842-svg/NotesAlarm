@@ -176,32 +176,3 @@ index 2282a36..03b65bb 100644
 +                    NotesScreen(
 +                        viewModel = notesViewModel,
 +                        currentRoute = AppDestination.Notes.route,
-+                        onDestinationClick = navigateToDestination,
-+                    ) { noteId ->
-+                        navController.navigate(AppDestination.NoteDetails.createRoute(noteId))
-+                    }
-+                }
-+
-+                KeepAliveTab(active = selectedMainRoute == AppDestination.Calendar.route) {
-+                    CalendarScreen(
-+                        viewModel = calendarViewModel,
-+                        currentRoute = AppDestination.Calendar.route,
-+                        onDestinationClick = navigateToDestination,
-+                    )
-+                }
-+
-+                KeepAliveTab(active = selectedMainRoute == AppDestination.Tables.route) {
-+                    TablesScreen(
-+                        viewModel = sheetsViewModel,
-+                        currentRoute = AppDestination.Tables.route,
-+                        onDestinationClick = navigateToDestination,
-+                    )
-+                }
-+
-+                KeepAliveTab(active = selectedMainRoute == AppDestination.Alarms.route) {
-+                    AlarmsScreen(
-+                        viewModel = alarmViewModel,
-+                        currentRoute = AppDestination.Alarms.route,
-+                        onDestinationClick = navigateToDestination,
-+                    )
-+                }
