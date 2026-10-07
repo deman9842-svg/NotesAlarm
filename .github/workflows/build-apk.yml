@@ -92,10 +92,60 @@ jobs:
 
       - name: Apply v102 direct-notes-return fix
         run: |
-          cat v102_patch_parts/part_* > /tmp/v102_direct_notes.patch
           cd NoteShiftApp_v96_OPTIMIZED
-          git apply --check /tmp/v102_direct_notes.patch
-          git apply /tmp/v102_direct_notes.patch
+          python3 - <<'PY'
+          from pathlib import Path
+
+          gradle = Path("app/build.gradle.kts")
+          text = gradle.read_text()
+          assert 'versionCode = 101' in text
+          assert 'versionName = "1.10.14"' in text
+          text = text.replace('versionCode = 101', 'versionCode = 102', 1)
+          text = text.replace('versionName = "1.10.14"', 'versionName = "1.10.15"', 1)
+          gradle.write_text(text)
+
+          nav = Path("app/src/main/java/com/example/noteshiftapp/navigation/ReliableAppNavHost.kt")
+          text = nav.read_text()
+          old = '''    val navigateToDestination: (AppDestination) -> Unit = { destination ->
+              if (destination in AppDestination.bottomItems && destination.route != currentRoute) {
+                  navController.navigate(destination.route) {
+                      popUpTo(navController.graph.startDestinationId) { saveState = true }
+                      launchSingleTop = true
+                      restoreState = true
+                  }
+              }
+          }
+          '''
+          new = '''    val navigateToDestination: (AppDestination) -> Unit = { destination ->
+              if (destination in AppDestination.bottomItems) {
+                  if (destination == AppDestination.Notes) {
+                      if (currentRoute != AppDestination.Notes.route) {
+                          val returnedToNotes = navController.popBackStack(
+                              route = AppDestination.Notes.route,
+                              inclusive = false,
+                          )
+                          if (!returnedToNotes) {
+                              navController.navigate(AppDestination.Notes.route) {
+                                  popUpTo(navController.graph.startDestinationId) {
+                                      inclusive = true
+                                  }
+                                  launchSingleTop = true
+                              }
+                          }
+                      }
+                  } else if (destination.route != currentRoute) {
+                      navController.navigate(destination.route) {
+                          popUpTo(navController.graph.startDestinationId) { saveState = true }
+                          launchSingleTop = true
+                          restoreState = true
+                      }
+                  }
+              }
+          }
+          '''
+          assert old in text
+          nav.write_text(text.replace(old, new, 1))
+          PY
           grep -q 'versionCode = 102' app/build.gradle.kts
           grep -q 'versionName = "1.10.15"' app/build.gradle.kts
           grep -q 'popBackStack' app/src/main/java/com/example/noteshiftapp/navigation/ReliableAppNavHost.kt
