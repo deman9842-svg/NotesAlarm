@@ -1,0 +1,104 @@
+--- a/app/build.gradle.kts
++++ b/app/build.gradle.kts
+@@ -13,8 +13,8 @@
+         applicationId = "com.example.noteshiftapp"
+         minSdk = 26
+         targetSdk = 35
+-        versionCode = 99
+-        versionName = "1.10.12"
++        versionCode = 100
++        versionName = "1.10.13"
+ 
+         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+         vectorDrawables {
+--- a/app/src/main/java/com/example/noteshiftapp/navigation/AppNavHost.kt
++++ b/app/src/main/java/com/example/noteshiftapp/navigation/AppNavHost.kt
+@@ -75,10 +75,8 @@
+         onOpenNoteConsumed()
+     }
+ 
+-    val navigateToDestination: (AppDestination) -> Unit = remember {
+-        { destination ->
+-            if (destination in AppDestination.bottomItems) {
+-                selectedMainRoute = destination.route
+-            }
++    val navigateToDestination: (AppDestination) -> Unit = { destination ->
++        if (destination in AppDestination.bottomItems) {
++            selectedMainRoute = destination.route
+         }
+     }
+ 
+--- a/app/src/main/java/com/example/noteshiftapp/ui/components/AppLauncherMenu.kt
++++ b/app/src/main/java/com/example/noteshiftapp/ui/components/AppLauncherMenu.kt
+@@ -24,6 +24,7 @@
+ import androidx.compose.runtime.Composable
+ import androidx.compose.ui.Alignment
+ import androidx.compose.ui.Modifier
++import androidx.compose.ui.platform.LocalConfiguration
+ import androidx.compose.ui.draw.clip
+ import androidx.compose.ui.graphics.Color
+ import androidx.compose.ui.graphics.vector.ImageVector
+@@ -41,6 +42,9 @@
+     currentRoute: String?,
+     onDestinationClick: (AppDestination) -> Unit,
+ ) {
++    val screenWidthDp = LocalConfiguration.current.screenWidthDp
++    val menuWidthDp = (screenWidthDp - 16).coerceIn(220, 360)
++    val itemWidthDp = ((menuWidthDp - 28) / 4).coerceIn(48, 76)
+     Box {
+         Surface(
+             modifier = Modifier
+@@ -60,6 +64,6 @@
+             onDismissRequest = { onExpandedChange(false) },
+             modifier = Modifier
+-                .width(430.dp)
++                .width(menuWidthDp.dp)
+                 .clip(RoundedCornerShape(28.dp))
+                 .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+         ) {
+@@ -79,6 +83,7 @@
+                         title = AppDestination.Notes.title,
+                         icon = Icons.Outlined.Description,
+                         selected = currentRoute == AppDestination.Notes.route,
++                        itemWidthDp = itemWidthDp,
+                         onClick = {
+                             onExpandedChange(false)
+                             onDestinationClick(AppDestination.Notes)
+@@ -88,6 +93,7 @@
+                         title = AppDestination.Calendar.title,
+                         icon = Icons.Outlined.DateRange,
+                         selected = currentRoute == AppDestination.Calendar.route,
++                        itemWidthDp = itemWidthDp,
+                         onClick = {
+                             onExpandedChange(false)
+                             onDestinationClick(AppDestination.Calendar)
+@@ -97,6 +103,7 @@
+                         title = AppDestination.Tables.title,
+                         icon = Icons.Outlined.TableChart,
+                         selected = currentRoute == AppDestination.Tables.route,
++                        itemWidthDp = itemWidthDp,
+                         onClick = {
+                             onExpandedChange(false)
+                             onDestinationClick(AppDestination.Tables)
+@@ -106,6 +113,7 @@
+                         title = AppDestination.Alarms.title,
+                         icon = Icons.Outlined.Alarm,
+                         selected = currentRoute == AppDestination.Alarms.route,
++                        itemWidthDp = itemWidthDp,
+                         onClick = {
+                             onExpandedChange(false)
+                             onDestinationClick(AppDestination.Alarms)
+@@ -122,11 +130,12 @@
+     title: String,
+     icon: ImageVector,
+     selected: Boolean,
++    itemWidthDp: Int,
+     onClick: () -> Unit,
+ ) {
+     Column(
+         modifier = Modifier
+-            .width(76.dp)
++            .width(itemWidthDp.dp)
+             .clickable(onClick = onClick)
+             .padding(vertical = 4.dp),
+         horizontalAlignment = Alignment.CenterHorizontally,

@@ -9,6 +9,7 @@ on:
       - "v97_patch_parts/**"
       - "v98_patch_parts/**"
       - "v99_patch_parts/**"
+      - "v100_patch_parts/**"
 
 jobs:
   build:
@@ -67,27 +68,35 @@ jobs:
           cd NoteShiftApp_v96_OPTIMIZED
           git apply --check /tmp/v99_tab_fix.patch
           git apply /tmp/v99_tab_fix.patch
-          grep -q 'versionCode = 99' app/build.gradle.kts
-          grep -q 'versionName = "1.10.12"' app/build.gradle.kts
+
+      - name: Apply v100 notes-navigation fix
+        run: |
+          cat v100_patch_parts/part_* > /tmp/v100_notes_nav.patch
+          cd NoteShiftApp_v96_OPTIMIZED
+          git apply --check /tmp/v100_notes_nav.patch
+          git apply /tmp/v100_notes_nav.patch
+          grep -q 'versionCode = 100' app/build.gradle.kts
+          grep -q 'versionName = "1.10.13"' app/build.gradle.kts
+          grep -q 'width(menuWidthDp.dp)' app/src/main/java/com/example/noteshiftapp/ui/components/AppLauncherMenu.kt
 
       - name: Build signed RELEASE APK
         run: |
           cd NoteShiftApp_v96_OPTIMIZED
           rm -f local.properties
           gradle :app:assembleRelease --no-daemon --stacktrace
-          cp app/build/outputs/apk/release/app-release.apk ../NoteShiftApp_v1.10.12_TAB_FIX.apk
+          cp app/build/outputs/apk/release/app-release.apk ../NoteShiftApp_v1.10.13_NOTES_NAV_FIX.apk
 
       - name: Verify APK and signature
         run: |
-          test -f NoteShiftApp_v1.10.12_TAB_FIX.apk
-          ls -lh NoteShiftApp_v1.10.12_TAB_FIX.apk
-          sha256sum NoteShiftApp_v1.10.12_TAB_FIX.apk
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs NoteShiftApp_v1.10.12_TAB_FIX.apk
+          test -f NoteShiftApp_v1.10.13_NOTES_NAV_FIX.apk
+          ls -lh NoteShiftApp_v1.10.13_NOTES_NAV_FIX.apk
+          sha256sum NoteShiftApp_v1.10.13_NOTES_NAV_FIX.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs NoteShiftApp_v1.10.13_NOTES_NAV_FIX.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: NoteShiftApp-v99-APK
-          path: NoteShiftApp_v1.10.12_TAB_FIX.apk
+          name: NoteShiftApp-v100-APK
+          path: NoteShiftApp_v1.10.13_NOTES_NAV_FIX.apk
           if-no-files-found: error
           retention-days: 30
